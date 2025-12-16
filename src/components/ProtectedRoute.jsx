@@ -1,8 +1,9 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 function ProtectedRoute({ redirectTo = '/login' }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -13,7 +14,11 @@ function ProtectedRoute({ redirectTo = '/login' }) {
   }
 
   if (!user) {
-    return <Navigate to={redirectTo} replace />;
+    const attemptedPath = [location.pathname, location.search, location.hash]
+      .filter(Boolean)
+      .join('');
+
+    return <Navigate to={redirectTo} replace state={{ from: attemptedPath }} />;
   }
 
   return <Outlet />;

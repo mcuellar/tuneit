@@ -92,7 +92,7 @@ function Register() {
         confirmPassword: ''
       });
 
-      navigate('/dashboard');
+      navigate('/dashboard/resumes');
     } catch (signUpError) {
       console.error('[TuneIt] Registration failed', signUpError);
     } finally {

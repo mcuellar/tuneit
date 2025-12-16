@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import './Dashboard.css';
 
 const JobsIcon = () => (
@@ -187,6 +188,7 @@ function Dashboard() {
   const [sidebarMode, setSidebarMode] = useState('expanded');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const location = useLocation();
+  const { profile, user, signOut } = useAuth();
 
   useEffect(() => {
     const handleResize = () => {
@@ -222,6 +224,14 @@ function Dashboard() {
     setIsMobileNavOpen(false);
   };
 
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('[TuneIt] Sign out failed.', error);
+    }
+  };
+
   const dashboardClasses = [
     'dashboard',
     `dashboard--${theme}`,
@@ -238,6 +248,13 @@ function Dashboard() {
         ? normalizedPath === item.to
         : normalizedPath === item.to || normalizedPath.startsWith(`${item.to}/`),
     ) || NAV_ITEMS[0];
+
+  const displayName = [profile?.first_name, profile?.last_name]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  const primaryLabel = displayName || user?.email || 'Your Workspace';
+  const secondaryLabel = user?.email ? 'Signed in via Supabase Auth' : 'Sign in to sync data';
 
   return (
     <div className={dashboardClasses}>
@@ -338,9 +355,16 @@ function Dashboard() {
             <button type="button" className="theme-toggle" onClick={toggleTheme}>
               {theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
             </button>
-            <div className="auth-placeholder">
-              <span className="auth-label">Auth Placeholder</span>
-              <span className="auth-subtext">Supabase integration pending</span>
+            <div className="auth-placeholder" role="group" aria-label="Account actions">
+              <span className="auth-label">{primaryLabel}</span>
+              <span className="auth-subtext">{secondaryLabel}</span>
+              {user ? (
+                <div className="auth-actions">
+                  <button type="button" className="sign-out-button" onClick={handleSignOut}>
+                    Sign out
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>

@@ -1,11 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const DEFAULT_SUPABASE_URL = 'http://127.0.0.1:54321';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  // eslint-disable-next-line no-console
-  console.warn('[TuneIt] Supabase URL or anon key is missing. Ensure .env.local is configured.');
+if (!supabaseAnonKey) {
+  throw new Error('[TuneIt] Missing VITE_SUPABASE_ANON_KEY. Update .env.local with your local anon key.');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

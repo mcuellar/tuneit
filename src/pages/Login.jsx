@@ -54,7 +54,7 @@ function Login() {
     setIsSubmitting(true);
     try {
       await signIn({ email: formData.email, password: formData.password });
-      const redirect = location.state?.from ?? '/dashboard';
+      const redirect = location.state?.from || '/dashboard';
       navigate(redirect, { replace: true });
     } catch (error) {
       console.error('[TuneIt] Login failed', error);
