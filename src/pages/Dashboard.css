@@ -918,7 +918,25 @@
 }
 
 .job-list-empty {
+  margin: 0;
   opacity: 0.75;
+  font-weight: 500;
+}
+
+.job-list-error {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(194, 59, 59, 0.35);
+  background: rgba(194, 59, 59, 0.08);
+  color: #8c1f1f;
+  font-weight: 600;
+}
+
+.dashboard--dark .job-list-error {
+  background: rgba(255, 122, 122, 0.12);
+  border-color: rgba(255, 122, 122, 0.35);
+  color: #ff9b9b;
 }
 
 .job-list-item {

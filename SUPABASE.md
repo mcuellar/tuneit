@@ -27,7 +27,7 @@ Keep this reference nearby when working with the TuneIt Supabase stack. It cover
 | Start containers | `supabase start` | Runs everything via Docker; keep it running while developing. |
 | Stop containers | `supabase stop` | Use `--all` to remove the network/volumes. |
 | Check status | `supabase status` | Shows URLs, anon key, and health. |
-| Apply migrations | `supabase db up` | Apply pending migrations to local database. |
+| Apply migrations | `supabase migration up --local` | Apply pending migrations to local database. |
 | Reset database | `supabase db reset` | Drops and recreates, then reapplies every migration + seeds. |
 | Open SQL prompt | `supabase db query` | Run ad-hoc SQL against the local DB. |
 

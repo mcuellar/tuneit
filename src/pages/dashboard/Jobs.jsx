@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -7,8 +7,8 @@ import { jsPDF } from 'jspdf';
 import { formatJobDescription, optimizeResume } from '../../services/openai';
 import { formatSalaryRange, normalizeSalaryDetails } from '../../utils/salary';
 import { useAuth } from '../../context/AuthContext';
+import supabase from '../../services/supabaseClient';
 
-const STORAGE_KEY = 'tuneit_jobs_v1';
 const RESUMES_STORAGE_KEY = 'tuneit_resumes_v1';
 const BASE_RESUME_COLLAPSE_KEY = 'tuneit_base_resume_collapsed_v1';
 const JOB_LIST_COLLAPSE_KEY = 'tuneit_job_list_collapsed_v1';
@@ -38,9 +38,11 @@ const MARKDOWN_TIPS_SNIPPET = `# Summary
 function DashboardJobs() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { profile, updateBaseResume } = useAuth();
+  const { user, profile, updateBaseResume } = useAuth();
   const [jobInput, setJobInput] = useState('');
   const [jobs, setJobs] = useState([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [jobsError, setJobsError] = useState(null);
   const [jobSearchTerm, setJobSearchTerm] = useState('');
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -93,6 +95,141 @@ function DashboardJobs() {
   const editingTextareaRef = useRef(null);
   const jobPreviewRef = useRef(null);
   const previewBannerTimeoutRef = useRef(null);
+
+  const mergeOptimizedResumes = useCallback(jobEntries => {
+    if (typeof window === 'undefined' || !Array.isArray(jobEntries) || jobEntries.length === 0) {
+      return jobEntries;
+    }
+
+    try {
+      const stored = window.localStorage.getItem(RESUMES_STORAGE_KEY);
+      if (!stored) {
+        return jobEntries;
+      }
+
+      const parsed = JSON.parse(stored);
+      const resumeJobs = Array.isArray(parsed?.jobs) ? parsed.jobs : [];
+      if (resumeJobs.length === 0) {
+        return jobEntries;
+      }
+
+      const resumeMap = new Map(resumeJobs.map(entry => [entry.jobId, entry]));
+      return jobEntries.map(job => {
+        const match = resumeMap.get(job.id);
+        if (!match) {
+          return job;
+        }
+        return {
+          ...job,
+          optimizedResume: match.content,
+          resumeUpdatedAt: match.optimizedAt,
+        };
+      });
+    } catch (storageError) {
+      console.warn('[TuneIt] Unable to hydrate resume data from localStorage.', storageError);
+      return jobEntries;
+    }
+  }, []);
+
+  const mapJobRecord = useCallback(record => {
+    if (!record) {
+      return null;
+    }
+
+    const salary = normalizeSalaryDetails({
+      range: record.salary_range,
+      min: record.salary_min,
+      max: record.salary_max,
+      currency: record.salary_currency,
+      period: record.salary_period ?? (record.hourly_rate != null ? 'hour' : null),
+    });
+
+    const description = record.job_description || '';
+
+    return {
+      id: record.id != null ? String(record.id) : crypto.randomUUID?.() ?? `${Date.now()}`,
+      recordId: record.id,
+      companyName: record.company_name ?? 'Unknown Company',
+      jobTitle: record.job_title ?? 'Untitled Role',
+      location: record.location ?? '',
+      locationType: record.location_type ?? '',
+      hourlyRate: record.hourly_rate ?? null,
+      tailoredResumePath: record.tailored_resume_path ?? null,
+      original: description,
+      formatted: description,
+      salary,
+      createdAt: record.created_at,
+      updatedAt: record.updated_at,
+      optimizedResume: '',
+      resumeUpdatedAt: null,
+    };
+  }, []);
+
+  const deriveCompanyAndTitle = useCallback(markdown => {
+    const fallback = { company: 'Unknown Company', title: 'Untitled Role' };
+    if (typeof markdown !== 'string') {
+      return fallback;
+    }
+
+    const firstLine = markdown
+      .split('\n')
+      .map(line => line.trim())
+      .find(Boolean);
+
+    if (!firstLine) {
+      return fallback;
+    }
+
+    const heading = firstLine.replace(/^#+\s*/, '').trim();
+    if (!heading) {
+      return fallback;
+    }
+
+    const [companyPart, ...rest] = heading.split(':');
+    const company = (companyPart || '').trim() || fallback.company;
+    const title = rest.join(':').trim() || fallback.title;
+
+    return {
+      company: company.slice(0, 100),
+      title: title.slice(0, 100),
+    };
+  }, []);
+
+  const loadJobs = useCallback(async () => {
+    if (!user?.id) {
+      setJobs([]);
+      setSelectedJobId(null);
+      setJobsLoading(false);
+      setJobsError(null);
+      return;
+    }
+
+    setJobsLoading(true);
+    setJobsError(null);
+
+    const { data, error } = await supabase
+      .from('user_jobs')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[TuneIt] Unable to load jobs from Supabase.', error);
+      setJobsError(error.message || 'Unable to load jobs. Please try again.');
+      setJobs([]);
+      setSelectedJobId(null);
+      setJobsLoading(false);
+      return;
+    }
+
+    const mapped = (data || []).map(mapJobRecord).filter(Boolean);
+    const merged = mergeOptimizedResumes(mapped);
+    const ordered = sortJobsByCreated(merged);
+
+    setJobs(ordered);
+    setSelectedJobId(ordered[0]?.id ?? null);
+    setJobsLoading(false);
+  }, [user?.id, mapJobRecord, mergeOptimizedResumes]);
 
   useEffect(() => {
     if (!profile) {
@@ -158,50 +295,6 @@ function DashboardJobs() {
       return;
     }
 
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const normalized = parsed
-            .filter(Boolean)
-            .map(job => ({
-              ...job,
-              original: job.original ?? '',
-              formatted: job.formatted ?? job.original ?? '',
-              optimizedResume: job.optimizedResume ?? '',
-              salary: normalizeSalaryDetails(job.salary) ?? null,
-            }));
-
-          if (normalized.length > 0) {
-            const ordered = sortJobsByCreated(normalized);
-            setJobs(ordered);
-            setSelectedJobId(ordered[0].id);
-          }
-        }
-      }
-    } catch (storageError) {
-      console.warn('[TuneIt] Unable to hydrate saved jobs from localStorage.', storageError);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(jobs));
-    } catch (storageError) {
-      console.warn('[TuneIt] Unable to persist jobs to localStorage.', storageError);
-    }
-  }, [jobs]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
     const snapshot = {
       jobs: jobs
         .filter(job => job.optimizedResume)
@@ -219,6 +312,10 @@ function DashboardJobs() {
       console.warn('[TuneIt] Unable to persist resumes snapshot to localStorage.', storageError);
     }
   }, [jobs]);
+
+  useEffect(() => {
+    loadJobs();
+  }, [loadJobs]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -252,7 +349,6 @@ function DashboardJobs() {
             return sortJobsByCreated(merged);
           });
         }
-
       }
     } catch (storageError) {
       console.warn('[TuneIt] Unable to hydrate resume data from localStorage.', storageError);
@@ -327,9 +423,11 @@ function DashboardJobs() {
     });
   }, [jobs, jobSearchTerm]);
 
-  const jobStatusLabel = jobSearchTerm.trim()
-    ? `${filteredJobs.length} match${filteredJobs.length === 1 ? '' : 'es'}`
-    : `${jobs.length} saved`;
+  const jobStatusLabel = jobsLoading
+    ? 'Loading…'
+    : jobSearchTerm.trim()
+        ? `${filteredJobs.length} match${filteredJobs.length === 1 ? '' : 'es'}`
+        : `${jobs.length} saved`;
 
   const selectedJob = jobs.find(job => job.id === selectedJobId) || null;
   useEffect(() => {
@@ -359,22 +457,56 @@ function DashboardJobs() {
       return;
     }
 
+    if (!user?.id) {
+      setError('Sign in to save jobs.');
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
 
     try {
       const { markdown: formatted, salary } = await formatJobDescription(trimmed);
       const normalizedSalary = normalizeSalaryDetails(salary) ?? null;
-      const job = {
-        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`,
-        original: trimmed,
-        formatted,
-        salary: normalizedSalary,
-        createdAt: new Date().toISOString(),
+      const { company, title } = deriveCompanyAndTitle(formatted);
+      const payload = {
+        user_id: user.id,
+        company_name: company,
+        job_title: title,
+        job_description: formatted,
+        salary_min: normalizedSalary?.min ?? null,
+        salary_max: normalizedSalary?.max ?? null,
+        salary_currency: normalizedSalary?.currency ?? null,
+        salary_period: normalizedSalary?.period ?? null,
+        salary_range: normalizedSalary?.range ?? null,
+        hourly_rate:
+          normalizedSalary?.period === 'hour'
+            ? normalizedSalary.min ?? normalizedSalary.max
+            : null,
+        location: null,
+        location_type: null,
+        tailored_resume_path: null,
       };
 
-      setJobs(prev => sortJobsByCreated([job, ...prev]));
-      setSelectedJobId(job.id);
+      const { data, error: insertError } = await supabase
+        .from('user_jobs')
+        .insert(payload)
+        .select('*')
+        .single();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      const mapped = mapJobRecord(data);
+      if (!mapped) {
+        throw new Error('Unexpected response when saving job.');
+      }
+
+      const merged = mergeOptimizedResumes([mapped])[0] ?? mapped;
+
+      setJobs(prev => sortJobsByCreated([merged, ...prev]));
+      setSelectedJobId(merged.id);
       setJobInput('');
     } catch (formatError) {
       console.error('[TuneIt] Unable to save job description.', formatError);
@@ -651,12 +783,31 @@ function DashboardJobs() {
     setPendingDeleteJob(null);
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!pendingDeleteJob) {
       return;
     }
 
     const jobId = pendingDeleteJob.id;
+    const recordId = pendingDeleteJob.recordId;
+    setPendingDeleteJob(null);
+    setIsEditing(false);
+    setEditingContent('');
+    setEditingError(null);
+
+    if (recordId) {
+      const { error: deleteError } = await supabase
+        .from('user_jobs')
+        .delete()
+        .eq('id', recordId)
+        .eq('user_id', user?.id ?? '');
+
+      if (deleteError) {
+        console.error('[TuneIt] Unable to delete job.', deleteError);
+        setError(deleteError.message || 'Unable to delete job. Please try again.');
+        return;
+      }
+    }
 
     setJobs(prev => {
       const updated = sortJobsByCreated(prev.filter(item => item.id !== jobId));
@@ -665,11 +816,6 @@ function DashboardJobs() {
       }
       return updated;
     });
-
-    setPendingDeleteJob(null);
-    setIsEditing(false);
-    setEditingContent('');
-    setEditingError(null);
   };
 
   const startBaseResumeEditing = () => {
@@ -994,7 +1140,7 @@ function DashboardJobs() {
     showPreviewBanner(null);
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (!selectedJob) {
       return;
     }
@@ -1005,33 +1151,83 @@ function DashboardJobs() {
       return;
     }
 
-    setJobs(prev =>
-      sortJobsByCreated(
-        prev.map(job => {
-        if (job.id !== selectedJob.id) {
-          return job;
-        }
+    if (previewMode === PREVIEW_MODES.RESUME) {
+      setJobs(prev =>
+        sortJobsByCreated(
+          prev.map(job =>
+            job.id === selectedJob.id
+              ? {
+                  ...job,
+                  optimizedResume: trimmed,
+                  resumeUpdatedAt: new Date().toISOString(),
+                }
+              : job,
+          ),
+        ),
+      );
 
-        if (previewMode === PREVIEW_MODES.RESUME) {
-          return {
-            ...job,
-            optimizedResume: trimmed,
-            resumeUpdatedAt: new Date().toISOString(),
-          };
-        }
+      setIsEditing(false);
+      setEditingError(null);
+      setEditingContent(trimmed);
+      return;
+    }
 
-        return {
-          ...job,
-          formatted: trimmed,
-          updatedAt: new Date().toISOString(),
-        };
-        }),
-      ),
-    );
+    if (!selectedJob.recordId) {
+      setEditingError('Unable to update this job. Try refreshing.');
+      return;
+    }
 
-    setIsEditing(false);
-    setEditingError(null);
-    setEditingContent(trimmed);
+    try {
+      const { company, title } = deriveCompanyAndTitle(trimmed);
+      const salaryDetails = selectedJob.salary ?? null;
+
+      const { data, error: updateError } = await supabase
+        .from('user_jobs')
+        .update({
+          job_description: trimmed,
+          company_name: company,
+          job_title: title,
+          salary_min: salaryDetails?.min ?? null,
+          salary_max: salaryDetails?.max ?? null,
+          salary_currency: salaryDetails?.currency ?? null,
+          salary_period: salaryDetails?.period ?? null,
+          salary_range: salaryDetails?.range ?? null,
+          hourly_rate:
+            salaryDetails?.period === 'hour'
+              ? salaryDetails.min ?? salaryDetails.max
+              : null,
+        })
+        .eq('id', selectedJob.recordId)
+        .eq('user_id', user?.id ?? '')
+        .select('*')
+        .single();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      const mapped = mapJobRecord(data);
+      if (!mapped) {
+        throw new Error('Job update returned no data.');
+      }
+
+      const updatedJob = {
+        ...mapped,
+        optimizedResume: selectedJob.optimizedResume,
+        resumeUpdatedAt: selectedJob.resumeUpdatedAt,
+      };
+
+      setJobs(prev =>
+        sortJobsByCreated(prev.map(job => (job.id === selectedJob.id ? updatedJob : job))),
+      );
+
+      setIsEditing(false);
+      setEditingError(null);
+      setEditingContent(trimmed);
+    } catch (updateError) {
+      console.error('[TuneIt] Unable to update job.', updateError);
+      setEditingError(updateError.message || 'Unable to update job. Please try again.');
+    }
   };
 
   const renderJobPaneContent = ref => {
@@ -1493,7 +1689,13 @@ function DashboardJobs() {
             id="job-list-panel"
             className={`job-list-panel${isJobListCollapsed ? ' is-collapsed' : ''}`}
           >
-            {isJobListCollapsed ? (
+            {jobsError ? (
+              <p className="job-list-error" role="alert">
+                {jobsError}
+              </p>
+            ) : jobsLoading ? (
+              <p className="job-list-empty">Loading your saved jobs…</p>
+            ) : isJobListCollapsed ? (
               <p className="job-list-collapsed-message">
                 Job list hidden. Expand to manage and optimize saved postings.
               </p>
