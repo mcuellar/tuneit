@@ -874,7 +874,7 @@ function DashboardJobs() {
     setOptimizeError(null);
   };
 
-  const handleBaseResumeSave = async () => {
+  const handleBaseResumeSave = async ({ forceFormat = false } = {}) => {
     const trimmed = baseResumeDraft.trim();
 
     if (!trimmed) {
@@ -890,21 +890,30 @@ function DashboardJobs() {
     }
 
     setIsBaseResumeSaving(true);
-    setIsFormattingBaseResume(true);
+    const hasExistingResume = Boolean(baseResume.trim());
+    const shouldFormatBeforeSave = forceFormat || !hasExistingResume;
+    if (shouldFormatBeforeSave) {
+      setIsFormattingBaseResume(true);
+    }
     clearBaseResumeMessageTimeout();
     setBaseResumeMessage(null);
 
     try {
-      const formatted = await formatBaseResume(trimmed);
-      await updateBaseResume(formatted);
-      setBaseResume(formatted);
-      setBaseResumeDraft(formatted);
-      setBaseResumeMessage({ type: 'success', text: 'Base resume formatted and synced to your account.' });
+      const nextResume = shouldFormatBeforeSave ? await formatBaseResume(trimmed) : trimmed;
+      await updateBaseResume(nextResume);
+      setBaseResume(nextResume);
+      setBaseResumeDraft(nextResume);
+      setBaseResumeMessage({
+        type: 'success',
+        text: shouldFormatBeforeSave
+          ? 'Base resume optimized and synced to your account.'
+          : 'Base resume updated.',
+      });
       setIsBaseResumeEditing(false);
       setOptimizeError(null);
       scheduleBaseResumeMessageDismiss();
     } catch (saveError) {
-      console.error('[TuneIt] Unable to format/save base resume.', saveError);
+      console.error('[TuneIt] Unable to save base resume.', saveError);
       clearBaseResumeMessageTimeout();
       setBaseResumeMessage({
         type: 'error',
@@ -912,7 +921,9 @@ function DashboardJobs() {
       });
     } finally {
       setIsBaseResumeSaving(false);
-      setIsFormattingBaseResume(false);
+      if (shouldFormatBeforeSave) {
+        setIsFormattingBaseResume(false);
+      }
     }
   };
 
@@ -1658,6 +1669,18 @@ function DashboardJobs() {
                   }
                 >
                   Reset
+                </button>
+                <button
+                  type="button"
+                  className="editor-save"
+                  onClick={() => handleBaseResumeSave({ forceFormat: true })}
+                  disabled={
+                    isBaseResumeSaving ||
+                    isFormattingBaseResume ||
+                    !baseResumeDraftTrimmed
+                  }
+                >
+                  {isFormattingBaseResume ? 'Optimizing…' : 'Optimize & Save'}
                 </button>
                 <button
                   type="button"
