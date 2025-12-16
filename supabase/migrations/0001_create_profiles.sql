@@ -1,15 +1,16 @@
 -- Profiles table stores TuneIt user profile data linked to Supabase Auth users.
 create table if not exists public.profiles (
-  id uuid primary key default gen_random_uuid(),
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id uuid not null references auth.users(id) on delete cascade,
-  first_name text not null,
-  last_name text not null,
-  display_name text generated always as (btrim(coalesce(first_name, '') || ' ' || coalesce(last_name, ''))) stored,
+  first_name varchar(100) not null,
+  last_name varchar(100) not null,
+  display_name varchar(255) generated always as (btrim(coalesce(first_name, '') || ' ' || coalesce(last_name, ''))) stored,
   headline text,
   bio text,
-  linkedin_url text,
-  github_url text,
-  website_url text,
+  linkedin_url varchar(100),
+  github_url varchar(100),
+  website_url varchar(100),
+  base_resume text,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
