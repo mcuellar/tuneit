@@ -6,9 +6,9 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { formatJobDescription, optimizeResume } from '../../services/openai';
 import { formatSalaryRange, normalizeSalaryDetails } from '../../utils/salary';
+import { useAuth } from '../../context/AuthContext';
 
 const STORAGE_KEY = 'tuneit_jobs_v1';
-const BASE_RESUME_KEY = 'tuneit_base_resume_v1';
 const RESUMES_STORAGE_KEY = 'tuneit_resumes_v1';
 const BASE_RESUME_COLLAPSE_KEY = 'tuneit_base_resume_collapsed_v1';
 const JOB_LIST_COLLAPSE_KEY = 'tuneit_job_list_collapsed_v1';
@@ -38,6 +38,7 @@ const MARKDOWN_TIPS_SNIPPET = `# Summary
 function DashboardJobs() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { profile, updateBaseResume } = useAuth();
   const [jobInput, setJobInput] = useState('');
   const [jobs, setJobs] = useState([]);
   const [jobSearchTerm, setJobSearchTerm] = useState('');
@@ -56,6 +57,7 @@ function DashboardJobs() {
   const [baseResumeDraft, setBaseResumeDraft] = useState('');
   const [baseResumeMessage, setBaseResumeMessage] = useState(null);
   const [isBaseResumeEditing, setIsBaseResumeEditing] = useState(false);
+  const [isBaseResumeSaving, setIsBaseResumeSaving] = useState(false);
   const [isBaseResumeCollapsed, setIsBaseResumeCollapsed] = useState(() => {
     if (typeof window === 'undefined') {
       return true;
@@ -91,6 +93,22 @@ function DashboardJobs() {
   const editingTextareaRef = useRef(null);
   const jobPreviewRef = useRef(null);
   const previewBannerTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (!profile) {
+      setBaseResume('');
+      if (!isBaseResumeEditing) {
+        setBaseResumeDraft('');
+      }
+      return;
+    }
+
+    const nextResume = typeof profile.base_resume === 'string' ? profile.base_resume : '';
+    setBaseResume(nextResume);
+    if (!isBaseResumeEditing) {
+      setBaseResumeDraft(nextResume);
+    }
+  }, [profile, isBaseResumeEditing]);
 
   const showPreviewBanner = nextBanner => {
     if (typeof window !== 'undefined') {
@@ -185,7 +203,6 @@ function DashboardJobs() {
     }
 
     const snapshot = {
-      baseResume,
       jobs: jobs
         .filter(job => job.optimizedResume)
         .map(job => ({
@@ -201,7 +218,7 @@ function DashboardJobs() {
     } catch (storageError) {
       console.warn('[TuneIt] Unable to persist resumes snapshot to localStorage.', storageError);
     }
-  }, [jobs, baseResume]);
+  }, [jobs]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -236,43 +253,11 @@ function DashboardJobs() {
           });
         }
 
-        if (typeof parsed.baseResume === 'string' && parsed.baseResume.trim()) {
-          setBaseResume(parsed.baseResume);
-          setBaseResumeDraft(parsed.baseResume);
-        }
       }
     } catch (storageError) {
       console.warn('[TuneIt] Unable to hydrate resume data from localStorage.', storageError);
     }
   }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    try {
-      const storedResume = window.localStorage.getItem(BASE_RESUME_KEY);
-      if (storedResume) {
-        setBaseResume(storedResume);
-        setBaseResumeDraft(storedResume);
-      }
-    } catch (storageError) {
-      console.warn('[TuneIt] Unable to hydrate base resume from localStorage.', storageError);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    try {
-      window.localStorage.setItem(BASE_RESUME_KEY, baseResume);
-    } catch (storageError) {
-      console.warn('[TuneIt] Unable to persist base resume to localStorage.', storageError);
-    }
-  }, [baseResume]);
 
   useEffect(() => {
     if (!selectedJobId && jobs.length > 0) {
@@ -706,7 +691,7 @@ function DashboardJobs() {
     setOptimizeError(null);
   };
 
-  const handleBaseResumeSave = () => {
+  const handleBaseResumeSave = async () => {
     const trimmed = baseResumeDraft.trim();
 
     if (!trimmed) {
@@ -714,17 +699,36 @@ function DashboardJobs() {
       return;
     }
 
-    setBaseResume(trimmed);
-    setBaseResumeDraft(trimmed);
-    setBaseResumeMessage({ type: 'success', text: 'Base resume saved.' });
-    setIsBaseResumeEditing(false);
-    setOptimizeError(null);
+    if (!updateBaseResume) {
+      setBaseResumeMessage({ type: 'error', text: 'You must be signed in to save your resume.' });
+      return;
+    }
 
-    if (typeof window !== 'undefined') {
-      window.clearTimeout(handleBaseResumeSave.timeoutId);
-      handleBaseResumeSave.timeoutId = window.setTimeout(() => {
-        setBaseResumeMessage(null);
-      }, 2500);
+    setIsBaseResumeSaving(true);
+    setBaseResumeMessage(null);
+
+    try {
+      await updateBaseResume(trimmed);
+      setBaseResume(trimmed);
+      setBaseResumeDraft(trimmed);
+      setBaseResumeMessage({ type: 'success', text: 'Base resume synced to your account.' });
+      setIsBaseResumeEditing(false);
+      setOptimizeError(null);
+
+      if (typeof window !== 'undefined') {
+        window.clearTimeout(handleBaseResumeSave.timeoutId);
+        handleBaseResumeSave.timeoutId = window.setTimeout(() => {
+          setBaseResumeMessage(null);
+        }, 2500);
+      }
+    } catch (saveError) {
+      console.error('[TuneIt] Unable to save base resume to Supabase.', saveError);
+      setBaseResumeMessage({
+        type: 'error',
+        text: saveError?.message || 'Unable to save your base resume. Please try again.',
+      });
+    } finally {
+      setIsBaseResumeSaving(false);
     }
   };
 
@@ -1358,7 +1362,7 @@ function DashboardJobs() {
                   type="button"
                   className="editor-cancel"
                   onClick={handleBaseResumeReset}
-                  disabled={baseResumeDraft === baseResume}
+                  disabled={isBaseResumeSaving || baseResumeDraft === baseResume}
                 >
                   Reset
                 </button>
@@ -1366,9 +1370,13 @@ function DashboardJobs() {
                   type="button"
                   className="editor-save"
                   onClick={handleBaseResumeSave}
-                  disabled={baseResumeDraft.trim() === baseResume.trim()}
+                  disabled={
+                    isBaseResumeSaving ||
+                    !baseResumeDraft.trim() ||
+                    baseResumeDraft.trim() === baseResume.trim()
+                  }
                 >
-                  Save Base Resume
+                  {isBaseResumeSaving ? 'Saving…' : 'Save Base Resume'}
                 </button>
               </div>
             </div>

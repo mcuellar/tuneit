@@ -11,6 +11,7 @@ const AuthContext = createContext({
   signOut: async () => {},
   refreshProfile: async () => {},
   clearAuthError: () => {},
+  updateBaseResume: async () => {},
 });
 
 const isMissingProfile = profile => !profile || Object.keys(profile).length === 0;
@@ -204,6 +205,27 @@ export function AuthProvider({ children }) {
     return fetchProfile(session.user.id);
   };
 
+  const updateBaseResume = async baseResumeMarkdown => {
+    if (!session?.user) {
+      throw new Error('You must be signed in to update your base resume.');
+    }
+
+    const payload = { base_resume: baseResumeMarkdown?.trim() || '' };
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('user_id', session.user.id)
+      .select('*')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    setProfile(data);
+    return data;
+  };
+
   const clearAuthError = () => setAuthError(null);
 
   const value = useMemo(
@@ -217,8 +239,9 @@ export function AuthProvider({ children }) {
       signOut,
       refreshProfile,
       clearAuthError,
+      updateBaseResume,
     }),
-    [session?.user, profile, loading, authError],
+    [session?.user, profile, loading, authError, updateBaseResume],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
