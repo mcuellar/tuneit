@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { formatJobDescription, optimizeResume } from '../../services/openai';
+import { formatBaseResume, formatJobDescription, optimizeResume } from '../../services/openai';
 import { formatSalaryRange, normalizeSalaryDetails } from '../../utils/salary';
 import { useAuth } from '../../context/AuthContext';
 import supabase from '../../services/supabaseClient';
@@ -60,6 +60,7 @@ function DashboardJobs() {
   const [baseResumeMessage, setBaseResumeMessage] = useState(null);
   const [isBaseResumeEditing, setIsBaseResumeEditing] = useState(false);
   const [isBaseResumeSaving, setIsBaseResumeSaving] = useState(false);
+  const [isFormattingBaseResume, setIsFormattingBaseResume] = useState(false);
   const [isBaseResumeCollapsed, setIsBaseResumeCollapsed] = useState(() => {
     if (typeof window === 'undefined') {
       return true;
@@ -92,6 +93,7 @@ function DashboardJobs() {
   const [previewBanner, setPreviewBanner] = useState(null);
   const baseResumeCardRef = useRef(null);
   const baseResumeEditorRef = useRef(null);
+  const baseResumeMessageTimeoutRef = useRef(null);
   const editingTextareaRef = useRef(null);
   const jobPreviewRef = useRef(null);
   const previewBannerTimeoutRef = useRef(null);
@@ -268,6 +270,25 @@ function DashboardJobs() {
     }
   };
 
+  const clearBaseResumeMessageTimeout = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.clearTimeout(baseResumeMessageTimeoutRef.current ?? undefined);
+    baseResumeMessageTimeoutRef.current = null;
+  };
+
+  const scheduleBaseResumeMessageDismiss = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    clearBaseResumeMessageTimeout();
+    baseResumeMessageTimeoutRef.current = window.setTimeout(() => {
+      setBaseResumeMessage(null);
+      baseResumeMessageTimeoutRef.current = null;
+    }, 2500);
+  };
+
   const persistBaseResumeCollapsed = nextValue => {
     setIsBaseResumeCollapsed(nextValue);
     if (typeof window !== 'undefined') {
@@ -388,6 +409,7 @@ function DashboardJobs() {
   useEffect(() => () => {
     if (typeof window !== 'undefined') {
       window.clearTimeout(previewBannerTimeoutRef.current ?? undefined);
+      window.clearTimeout(baseResumeMessageTimeoutRef.current ?? undefined);
     }
   }, []);
 
@@ -447,6 +469,19 @@ function DashboardJobs() {
       activePreviewContent &&
       activePreviewContent.trim(),
   );
+  const baseResumeDraftTrimmed = baseResumeDraft.trim();
+  const baseResumeHasChanges = baseResumeDraftTrimmed !== baseResume.trim();
+  const progressModalConfig = isOptimizing
+    ? {
+        title: 'Optimizing… Please wait',
+        description: `Tailoring your resume for "${optimizingLabel}".`,
+      }
+    : isFormattingBaseResume
+      ? {
+          title: 'Formatting… Please wait',
+          description: 'Converting your base resume into clean Markdown.',
+        }
+      : null;
 
   const handleSave = async event => {
     event.preventDefault();
@@ -822,6 +857,7 @@ function DashboardJobs() {
     persistBaseResumeCollapsed(false);
     setIsBaseResumeEditing(true);
     setBaseResumeDraft(baseResume);
+    clearBaseResumeMessageTimeout();
     setBaseResumeMessage(null);
     setOptimizeError(null);
     setTimeout(() => {
@@ -833,6 +869,7 @@ function DashboardJobs() {
   const cancelBaseResumeEditing = () => {
     setIsBaseResumeEditing(false);
     setBaseResumeDraft(baseResume);
+    clearBaseResumeMessageTimeout();
     setBaseResumeMessage(null);
     setOptimizeError(null);
   };
@@ -841,45 +878,81 @@ function DashboardJobs() {
     const trimmed = baseResumeDraft.trim();
 
     if (!trimmed) {
+      clearBaseResumeMessageTimeout();
       setBaseResumeMessage({ type: 'error', text: 'Add resume content before saving.' });
       return;
     }
 
     if (!updateBaseResume) {
+      clearBaseResumeMessageTimeout();
       setBaseResumeMessage({ type: 'error', text: 'You must be signed in to save your resume.' });
       return;
     }
 
     setIsBaseResumeSaving(true);
+    setIsFormattingBaseResume(true);
+    clearBaseResumeMessageTimeout();
     setBaseResumeMessage(null);
 
     try {
-      await updateBaseResume(trimmed);
-      setBaseResume(trimmed);
-      setBaseResumeDraft(trimmed);
-      setBaseResumeMessage({ type: 'success', text: 'Base resume synced to your account.' });
+      const formatted = await formatBaseResume(trimmed);
+      await updateBaseResume(formatted);
+      setBaseResume(formatted);
+      setBaseResumeDraft(formatted);
+      setBaseResumeMessage({ type: 'success', text: 'Base resume formatted and synced to your account.' });
       setIsBaseResumeEditing(false);
       setOptimizeError(null);
-
-      if (typeof window !== 'undefined') {
-        window.clearTimeout(handleBaseResumeSave.timeoutId);
-        handleBaseResumeSave.timeoutId = window.setTimeout(() => {
-          setBaseResumeMessage(null);
-        }, 2500);
-      }
+      scheduleBaseResumeMessageDismiss();
     } catch (saveError) {
-      console.error('[TuneIt] Unable to save base resume to Supabase.', saveError);
+      console.error('[TuneIt] Unable to format/save base resume.', saveError);
+      clearBaseResumeMessageTimeout();
       setBaseResumeMessage({
         type: 'error',
         text: saveError?.message || 'Unable to save your base resume. Please try again.',
       });
     } finally {
       setIsBaseResumeSaving(false);
+      setIsFormattingBaseResume(false);
+    }
+  };
+
+  const handleFormatBaseResume = async () => {
+    const trimmed = baseResumeDraft.trim();
+
+    if (!trimmed) {
+      clearBaseResumeMessageTimeout();
+      setBaseResumeMessage({ type: 'error', text: 'Add resume details before formatting.' });
+      return;
+    }
+
+    setIsFormattingBaseResume(true);
+    clearBaseResumeMessageTimeout();
+    setBaseResumeMessage(null);
+    setOptimizeError(null);
+
+    try {
+      const formatted = await formatBaseResume(trimmed);
+      setBaseResumeDraft(formatted);
+      setBaseResumeMessage({
+        type: 'success',
+        text: 'Formatted with OpenAI. Review and save when ready.',
+      });
+      scheduleBaseResumeMessageDismiss();
+    } catch (formatError) {
+      console.error('[TuneIt] Unable to format base resume.', formatError);
+      clearBaseResumeMessageTimeout();
+      setBaseResumeMessage({
+        type: 'error',
+        text: formatError?.message || 'Unable to format your resume. Please try again.',
+      });
+    } finally {
+      setIsFormattingBaseResume(false);
     }
   };
 
   const handleBaseResumeReset = () => {
     setBaseResumeDraft(baseResume);
+    clearBaseResumeMessageTimeout();
     setBaseResumeMessage(null);
     setOptimizeError(null);
   };
@@ -1542,6 +1615,21 @@ function DashboardJobs() {
                   Quote
                 </button>
               </div>
+              <div className="base-resume-format-actions">
+                <button
+                  type="button"
+                  className="base-resume-button base-resume-button--ghost"
+                  onClick={handleFormatBaseResume}
+                  disabled={
+                    isFormattingBaseResume || isBaseResumeSaving || !baseResumeDraftTrimmed
+                  }
+                >
+                  {isFormattingBaseResume ? 'Formatting…' : 'Format with OpenAI'}
+                </button>
+                <span className="base-resume-format-hint">
+                  Clean up pasted text into structured Markdown before saving.
+                </span>
+              </div>
               <textarea
                 ref={baseResumeEditorRef}
                 className="job-preview-textarea base-resume-textarea"
@@ -1551,14 +1639,23 @@ function DashboardJobs() {
                 rows={12}
               />
               <div className="base-resume-editor-actions">
-                <button type="button" className="editor-cancel" onClick={cancelBaseResumeEditing}>
+                <button
+                  type="button"
+                  className="editor-cancel"
+                  onClick={cancelBaseResumeEditing}
+                  disabled={isBaseResumeSaving || isFormattingBaseResume}
+                >
                   Cancel
                 </button>
                 <button
                   type="button"
                   className="editor-cancel"
                   onClick={handleBaseResumeReset}
-                  disabled={isBaseResumeSaving || baseResumeDraft === baseResume}
+                  disabled={
+                    isBaseResumeSaving ||
+                    isFormattingBaseResume ||
+                    !baseResumeHasChanges
+                  }
                 >
                   Reset
                 </button>
@@ -1568,8 +1665,9 @@ function DashboardJobs() {
                   onClick={handleBaseResumeSave}
                   disabled={
                     isBaseResumeSaving ||
-                    !baseResumeDraft.trim() ||
-                    baseResumeDraft.trim() === baseResume.trim()
+                    isFormattingBaseResume ||
+                    !baseResumeDraftTrimmed ||
+                    !baseResumeHasChanges
                   }
                 >
                   {isBaseResumeSaving ? 'Saving…' : 'Save Base Resume'}
@@ -2014,13 +2112,11 @@ function DashboardJobs() {
         </div>
       ) : null}
 
-      {isOptimizing ? (
+      {progressModalConfig ? (
         <div className="modal-overlay" role="alertdialog" aria-modal="true" aria-live="assertive">
           <div className="modal optimizing-modal">
-            <h3 className="modal-title">Optimizing… Please wait</h3>
-            <p className="modal-description">
-              Tailoring your resume for "{optimizingLabel}".
-            </p>
+            <h3 className="modal-title">{progressModalConfig.title}</h3>
+            <p className="modal-description">{progressModalConfig.description}</p>
             <div className="optimizing-spinner" aria-hidden="true" />
           </div>
         </div>

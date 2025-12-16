@@ -395,6 +395,23 @@
   border: 1px solid rgba(212, 175, 112, 0.28);
 }
 
+.base-resume-format-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0.85rem 0 0.5rem;
+}
+
+.base-resume-format-hint {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.dashboard--dark .base-resume-format-hint {
+  opacity: 0.9;
+}
+
 .base-resume-editor-actions {
   flex-wrap: wrap;
 }

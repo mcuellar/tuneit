@@ -79,6 +79,74 @@ export async function formatJobDescription(jobDescription) {
   return buildFormattedResponse(markdown, trimmed);
 }
 
+export async function formatBaseResume(rawResume) {
+  const trimmed = rawResume?.trim();
+
+  if (!trimmed) {
+    throw new Error('Add resume details before formatting.');
+  }
+
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+
+  if (!apiKey) {
+    if (import.meta.env.PROD) {
+      throw new Error(STORAGE_WARNING);
+    }
+
+    console.warn('[TuneIt] Missing VITE_OPENAI_API_KEY. Returning development fallback for base resume.');
+    return localBaseResumeFallback(trimmed);
+  }
+
+  const body = {
+    model: OPENAI_MODEL,
+    temperature: 0.35,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are an elite resume editor. Convert raw resume notes into polished Markdown with concise headings and bullet points. Use only the provided facts—never invent employers, titles, dates, skills, or metrics. Begin with a level-one heading that includes the candidate name if present, otherwise "Professional Profile". Include the sections Summary, Experience, Skills, Education, and Certifications only when details exist, preserving chronological order. Respond with Markdown only.',
+      },
+      {
+        role: 'user',
+        content: `Format the following resume content into Markdown using the rules above. Retain every factual detail without embellishing.\n\n${trimmed}`,
+      },
+    ],
+    max_tokens: 1200,
+  };
+
+  const payloadSize = new TextEncoder().encode(JSON.stringify(body)).length;
+  logSize('Base resume format payload', payloadSize);
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const responseClone = response.clone();
+  const responseText = await responseClone.text();
+  const responseSize = new TextEncoder().encode(responseText).length;
+  logSize('Base resume format response', responseSize);
+
+  if (!response.ok) {
+    const errorPayload = await safeParseJSON(response);
+    const message = errorPayload?.error?.message || 'Unable to format your resume with OpenAI.';
+    throw new Error(message);
+  }
+
+  const payload = await response.json();
+  const markdown = payload?.choices?.[0]?.message?.content;
+
+  if (!markdown) {
+    throw new Error('OpenAI response did not include resume content.');
+  }
+
+  return normalizeMarkdown(markdown);
+}
+
 export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
   const resumeTrimmed = baseResume?.trim();
   const jobTrimmed = jobDescription?.trim();
@@ -176,6 +244,17 @@ function localMarkdownFallback(raw) {
 function localResumeFallback(baseResume, jobDescription, jobTitle) {
   const heading = jobTitle ? `# ${jobTitle} Resume (Dev Fallback)` : '# Tailored Resume (Dev Fallback)';
   return `${heading}\n\n> This resume was generated using the local development fallback.\n\n${baseResume}\n\n---\n\n## Target Role Notes\n\n${jobDescription}`;
+}
+
+function localBaseResumeFallback(content) {
+  const normalized = content.replace(/\r\n/g, '\n').trim();
+  if (!normalized) {
+    return '# Professional Profile\n\n_Add resume details here before saving._';
+  }
+
+  const [firstLine = 'Professional Profile'] = normalized.split('\n').filter(Boolean);
+  const heading = firstLine.replace(/^[#\s]+/, '').trim() || 'Professional Profile';
+  return `# ${heading}\n\n${normalized}`;
 }
 
 function normalizeMarkdown(raw) {
