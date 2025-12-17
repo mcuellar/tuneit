@@ -8,7 +8,7 @@ import {
   parseSalaryNumber,
 } from '../utils/salary';
 
-const OPENAI_MODEL = 'gpt-4o-mini';
+const OPENAI_MODEL = 'gpt-5-mini';
 const STORAGE_WARNING = 'Set VITE_OPENAI_API_KEY in your Vite environment to enable OpenAI formatting.';
 
 export async function formatJobDescription(jobDescription) {
@@ -30,8 +30,8 @@ export async function formatJobDescription(jobDescription) {
   }
 
   const body = {
-    model: OPENAI_MODEL,
-    temperature: 0.2,
+    model: 'gpt-4o-mini',
+    temperature: 0.3,
     messages: [
       {
         role: 'system',
@@ -43,7 +43,7 @@ export async function formatJobDescription(jobDescription) {
         content: `Format the following job description using Markdown. Do not invent new details, and always follow the salary instructions above by clearly stating when data is unavailable.\n\n${trimmed}`,
       },
     ],
-    max_tokens: 900,
+    max_tokens: 2200,
   };
 
   const payloadSize = new TextEncoder().encode(JSON.stringify(body)).length;
@@ -98,8 +98,8 @@ export async function formatBaseResume(rawResume) {
   }
 
   const body = {
-    model: OPENAI_MODEL,
-    temperature: 0.35,
+    model: 'gpt-4o-mini',
+    temperature: 0.3,
     messages: [
       {
         role: 'system',
@@ -172,7 +172,7 @@ export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
 
   const body = {
     model: OPENAI_MODEL,
-    temperature: 0.45,
+    temperature: 1,
     messages: [
       {
         role: 'system',
@@ -184,7 +184,7 @@ export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
         content: `Base resume (source of truth, do not introduce new facts):\n${resumeTrimmed}\n\nTarget job description:\n${jobTrimmed}\n\nRewrite the resume so it is tailored to this role. Rephrase and reprioritize existing achievements to match the role, mirror the terminology of the job description when appropriate, and keep the tone professional. Use the target job title${jobTitle ? ` "${jobTitle}"` : ''} in the summary. If a detail is not present in the base resume, leave it out instead of inventing it.`,
       },
     ],
-    max_tokens: 1100,
+    max_completion_tokens: 2200,
   };
 
   const payloadSize = new TextEncoder().encode(JSON.stringify(body)).length;
