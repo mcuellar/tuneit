@@ -55,6 +55,7 @@ function DashboardJobs() {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizeError, setOptimizeError] = useState(null);
   const [optimizingJobTitle, setOptimizingJobTitle] = useState('');
+  const [isFormattingJob, setIsFormattingJob] = useState(false);
   const [baseResume, setBaseResume] = useState('');
   const [baseResumeDraft, setBaseResumeDraft] = useState('');
   const [baseResumeMessage, setBaseResumeMessage] = useState(null);
@@ -121,6 +122,9 @@ function DashboardJobs() {
         if (!match) {
           return job;
         }
+        if (job.optimizedResume && job.optimizedResume.trim()) {
+          return job;
+        }
         return {
           ...job,
           optimizedResume: match.content,
@@ -156,16 +160,42 @@ function DashboardJobs() {
       location: record.location ?? '',
       locationType: record.location_type ?? '',
       hourlyRate: record.hourly_rate ?? null,
-      tailoredResumePath: record.tailored_resume_path ?? null,
+      tailoredResume: record.tailored_resume ?? '',
       original: description,
       formatted: description,
       salary,
       createdAt: record.created_at,
       updatedAt: record.updated_at,
-      optimizedResume: '',
-      resumeUpdatedAt: null,
+      optimizedResume: record.tailored_resume ?? '',
+      resumeUpdatedAt: record.updated_at ?? record.created_at,
     };
   }, []);
+
+  const persistTailoredResume = useCallback(
+    async ({ recordId, content }) => {
+      if (!recordId) {
+        throw new Error('Missing job reference for tailored resume.');
+      }
+      if (!user?.id) {
+        throw new Error('Sign in to save tailored resumes.');
+      }
+
+      const { data, error } = await supabase
+        .from('user_jobs')
+        .update({ tailored_resume: content })
+        .eq('id', recordId)
+        .eq('user_id', user.id)
+        .select('*')
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return mapJobRecord(data);
+    },
+    [mapJobRecord, user?.id],
+  );
 
   const deriveCompanyAndTitle = useCallback(markdown => {
     const fallback = { company: 'Unknown Company', title: 'Untitled Role' };
@@ -359,8 +389,12 @@ function DashboardJobs() {
             resumeJobs.forEach(resumeEntry => {
               const index = merged.findIndex(job => job.id === resumeEntry.jobId);
               if (index !== -1) {
+                const existing = merged[index];
+                if (existing.optimizedResume && existing.optimizedResume.trim()) {
+                  return;
+                }
                 merged[index] = {
-                  ...merged[index],
+                  ...existing,
                   optimizedResume: resumeEntry.content,
                   resumeUpdatedAt: resumeEntry.optimizedAt,
                 };
@@ -481,7 +515,12 @@ function DashboardJobs() {
           title: 'Formatting… Please wait',
           description: 'Converting your base resume into clean Markdown.',
         }
-      : null;
+      : isFormattingJob
+        ? {
+            title: 'Formatting… Please wait',
+            description: 'Polishing the job description before saving it to your list.',
+          }
+        : null;
 
   const handleSave = async event => {
     event.preventDefault();
@@ -498,6 +537,7 @@ function DashboardJobs() {
     }
 
     setIsSaving(true);
+    setIsFormattingJob(true);
     setError(null);
 
     try {
@@ -520,7 +560,7 @@ function DashboardJobs() {
             : null,
         location: null,
         location_type: null,
-        tailored_resume_path: null,
+        tailored_resume: null,
       };
 
       const { data, error: insertError } = await supabase
@@ -548,6 +588,7 @@ function DashboardJobs() {
       setError(formatError.message || 'Unable to save job. Please try again.');
     } finally {
       setIsSaving(false);
+      setIsFormattingJob(false);
     }
   };
 
@@ -1108,6 +1149,11 @@ function DashboardJobs() {
       return;
     }
 
+    if (!job.recordId) {
+      setOptimizeError('Save this job before optimizing.');
+      return;
+    }
+
     setPreviewMode(PREVIEW_MODES.RESUME);
     setOptimizeError(null);
     setOptimizingJobTitle(getJobTitle(job));
@@ -1120,18 +1166,34 @@ function DashboardJobs() {
         jobTitle: getJobTitle(job),
       });
 
+      const persistedJob = await persistTailoredResume({
+        recordId: job.recordId,
+        content: optimized,
+      });
+
       let updatedJobsSnapshot = [];
       setJobs(prev => {
         const next = sortJobsByCreated(
-          prev.map(item =>
-          item.id === job.id
-            ? {
+          prev.map(item => {
+            if (item.id !== job.id) {
+              return item;
+            }
+            if (persistedJob) {
+              return {
                 ...item,
-                optimizedResume: optimized,
-                resumeUpdatedAt: new Date().toISOString(),
-              }
-              : item,
-          ),
+                ...persistedJob,
+                recordId: persistedJob.recordId ?? item.recordId,
+                optimizedResume: persistedJob.optimizedResume || optimized,
+                resumeUpdatedAt:
+                  persistedJob.resumeUpdatedAt || persistedJob.updatedAt || new Date().toISOString(),
+              };
+            }
+            return {
+              ...item,
+              optimizedResume: optimized,
+              resumeUpdatedAt: new Date().toISOString(),
+            };
+          }),
         );
         updatedJobsSnapshot = next;
         return next;
@@ -1236,23 +1298,40 @@ function DashboardJobs() {
     }
 
     if (previewMode === PREVIEW_MODES.RESUME) {
-      setJobs(prev =>
-        sortJobsByCreated(
-          prev.map(job =>
-            job.id === selectedJob.id
-              ? {
-                  ...job,
-                  optimizedResume: trimmed,
-                  resumeUpdatedAt: new Date().toISOString(),
-                }
-              : job,
-          ),
-        ),
-      );
+      if (!selectedJob.recordId) {
+        setEditingError('Unable to update this resume. Try refreshing.');
+        return;
+      }
 
-      setIsEditing(false);
-      setEditingError(null);
-      setEditingContent(trimmed);
+      try {
+        const updatedJob = await persistTailoredResume({
+          recordId: selectedJob.recordId,
+          content: trimmed,
+        });
+
+        setJobs(prev =>
+          sortJobsByCreated(
+            prev.map(job =>
+              job.id === selectedJob.id
+                ? {
+                    ...job,
+                    ...(updatedJob ?? {}),
+                    optimizedResume: trimmed,
+                    resumeUpdatedAt:
+                      updatedJob?.resumeUpdatedAt || updatedJob?.updatedAt || new Date().toISOString(),
+                  }
+                : job,
+            ),
+          ),
+        );
+
+        setIsEditing(false);
+        setEditingError(null);
+        setEditingContent(trimmed);
+      } catch (saveError) {
+        console.error('[TuneIt] Unable to save tailored resume.', saveError);
+        setEditingError(saveError.message || 'Unable to save tailored resume. Please try again.');
+      }
       return;
     }
 
