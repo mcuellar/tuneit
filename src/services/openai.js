@@ -70,9 +70,10 @@ export async function formatJobDescription(jobDescription) {
   }
 
   const payload = await response.json();
-  const markdown = payload?.choices?.[0]?.message?.content;
+  const markdown = extractMessageContent(payload);
 
   if (!markdown) {
+    console.error('[OpenAI] formatJobDescription missing content payload:', payload);
     throw new Error('OpenAI response did not include formatted content.');
   }
 
@@ -138,9 +139,10 @@ export async function formatBaseResume(rawResume) {
   }
 
   const payload = await response.json();
-  const markdown = payload?.choices?.[0]?.message?.content;
+  const markdown = extractMessageContent(payload);
 
   if (!markdown) {
+    console.error('[OpenAI] formatBaseResume missing content payload:', payload);
     throw new Error('OpenAI response did not include resume content.');
   }
 
@@ -177,14 +179,14 @@ export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
       {
         role: 'system',
         content:
-          'You are an expert career coach and meticulous fact-checker. Rewrite resumes so they align with a target job description using only information that already exists in the provided base resume. Do not fabricate or infer new employers, titles, dates, technologies, certifications, responsibilities, or metrics. You may reorder, merge, or rephrase existing content, but every factual statement must be traceable to the base resume. If the base resume lacks details for a requirement, leave it out rather than inventing it. Respond only with Markdown representing the tailored resume.',
+          'You are an expert career coach and meticulous fact-checker. Rewrite resumes so they align with a target job description using only information that already exists in the provided base resume. Do not fabricate or infer new employers, titles, dates, technologies, certifications, responsibilities, or metrics. You may reorder, merge, or rephrase existing content, but every factual statement must be traceable to the base resume. If the base resume lacks details for a requirement, leave it out rather than inventing it. Add appropriate markdown headers where needed (e.g., ## Core Skills, ## Experience). Ensure to start in a new line when writing Job Descriptions. Usually in a new line after job location and date.',
       },
       {
         role: 'user',
-        content: `Base resume (source of truth, do not introduce new facts):\n${resumeTrimmed}\n\nTarget job description:\n${jobTrimmed}\n\nRewrite the resume so it is tailored to this role. Rephrase and reprioritize existing achievements to match the role, mirror the terminology of the job description when appropriate, and keep the tone professional. Use the target job title${jobTitle ? ` "${jobTitle}"` : ''} in the summary. If a detail is not present in the base resume, leave it out instead of inventing it.`,
+        content: `Base resume (source of truth, do not introduce new facts):\n${resumeTrimmed}\n\nTarget job description:\n${jobTrimmed}\n\nRewrite the resume so it is tailored to this role. Rephrase and reprioritize existing achievements to match the role, mirror the terminology of the job description when appropriate, and keep the tone professional. Use the target job title${jobTitle ? ` "${jobTitle}"` : ''} in the summary. If a detail is not present in the base resume, leave it out instead of inventing it. Use proper markdown headers where needed. Keep my name and contact details unchanged and with same format, including any profile links. Begin with a level-one heading containing my name as it appears in the base resume.`,
       },
     ],
-    max_completion_tokens: 2200,
+    max_completion_tokens: 4096,
   };
 
   const payloadSize = new TextEncoder().encode(JSON.stringify(body)).length;
@@ -210,14 +212,20 @@ export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
     throw new Error(message);
   }
 
-  const payload = await response.json();
-  const markdown = payload?.choices?.[0]?.message?.content;
+  // const payload = await response.json();
+  // const markdown = extractMessageContent(payload);
+  const output = await response.json();
+  const responseContent = output.choices?.[0]?.message?.content;
 
-  if (!markdown) {
-    throw new Error('OpenAI response did not include resume content.');
-  }
+  console.log('[OpenAI] optimizeResume response content:', responseContent); 
 
-  return normalizeMarkdown(markdown);
+  // if (!markdown) {
+  //   console.error('[OpenAI] optimizeResume missing content payload:', payload);
+  //   throw new Error('OpenAI response did not include resume content.');
+  // }
+
+  return responseContent;
+  // return normalizeMarkdown(markdown);
 }
 
 function logSize(label, bytes) {
@@ -409,6 +417,138 @@ function getDefaultSalaryDetails() {
     currency: null,
     period: null,
   };
+}
+
+function extractMessageContent(payload) {
+  const text =
+    flattenChoiceCollection(payload?.choices) || flattenChoiceCollection(payload?.output?.choices);
+  return text?.trim() || null;
+}
+
+function flattenChoiceCollection(collection) {
+  if (!Array.isArray(collection) || collection.length === 0) {
+    return null;
+  }
+  for (const choice of collection) {
+    const message = choice?.message ?? choice?.delta ?? null;
+    if (!message) {
+      continue;
+    }
+
+    const flattened = flattenContent([
+      message.content,
+      message.text,
+      choice.content,
+      choice.text,
+      message,
+    ]);
+
+    if (flattened?.trim()) {
+      return flattened;
+    }
+  }
+  return null;
+}
+
+function flattenContent(node) {
+  if (node == null) {
+    return '';
+  }
+
+  if (typeof node === 'string') {
+    return node;
+  }
+
+  if (typeof node === 'number' || typeof node === 'boolean') {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node
+      .map(flattenContent)
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  if (typeof node === 'object') {
+    if (typeof node.type === 'string') {
+      if (node.type === 'output_text' && Array.isArray(node.text)) {
+        return node.text.map(flattenContent).join('\n');
+      }
+
+      if (node.type === 'text' && typeof node.text === 'string') {
+        return node.text;
+      }
+    }
+
+    if (typeof node.text === 'string') {
+      return node.text;
+    }
+
+    if (node.text?.value) {
+      return flattenContent(node.text.value);
+    }
+
+    if (Array.isArray(node.text)) {
+      return node.text.map(flattenContent).join('\n');
+    }
+
+    if (typeof node.content === 'string') {
+      return node.content;
+    }
+
+    if (Array.isArray(node.content)) {
+      return node.content.map(flattenContent).join('\n');
+    }
+
+    if (node.content?.value) {
+      return flattenContent(node.content.value);
+    }
+
+    if (typeof node.value === 'string') {
+      return node.value;
+    }
+
+    if (Array.isArray(node.value)) {
+      return node.value.map(flattenContent).join('\n');
+    }
+
+    if (typeof node.message === 'string') {
+      return node.message;
+    }
+
+    if (Array.isArray(node.message)) {
+      return node.message.map(flattenContent).join('\n');
+    }
+
+    if (typeof node.output_text === 'string') {
+      return node.output_text;
+    }
+
+    if (Array.isArray(node.output_text)) {
+      return node.output_text.map(flattenContent).join('\n');
+    }
+
+    if (typeof node.arguments === 'string') {
+      try {
+        const parsed = JSON.parse(node.arguments);
+        return flattenContent(parsed);
+      } catch {
+        return node.arguments;
+      }
+    }
+
+    if (Array.isArray(node.arguments)) {
+      return node.arguments.map(flattenContent).join('\n');
+    }
+
+    return Object.values(node)
+      .map(flattenContent)
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return '';
 }
 
 function deriveSalaryFromSection(markdown) {

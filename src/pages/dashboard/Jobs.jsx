@@ -1221,7 +1221,8 @@ function DashboardJobs() {
 
       setSelectedJobId(job.id);
       setEditingContent(optimized);
-      navigate('/dashboard/resumes', { state: { highlightJobId: job.id } });
+      setPreviewMode(PREVIEW_MODES.RESUME);
+      setPreviewBanner({ type: 'success', text: 'Tailored resume ready below.' });
     } catch (optimizationError) {
       console.error('[TuneIt] Unable to optimize resume.', optimizationError);
       setOptimizeError(optimizationError.message || 'Unable to optimize resume. Please try again.');
