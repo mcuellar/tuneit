@@ -4,12 +4,12 @@ TuneIt is an AI-powered job application assistant that helps users track applica
 
 ## Features
 
-- 🤖 **AI-Powered Resume Optimization** - Automatically tailor your resume to match any job description
-- 💾 **Save & Organize** - Keep track of all your tailored resumes and job applications
-- ⚡ **Instant Results** - Get your optimized resume in seconds
-- 📱 **Responsive Design** - Works seamlessly on desktop, tablet, and mobile devices
-- 🎨 **Beautiful UI** - Modern, sleek design with smooth animations
-- 🔒 **Secure** - Your data is private and secure
+- **AI-Powered Resume Optimization** - Automatically tailor your resume to match any job description
+- **Save & Organize** - Keep track of all your tailored resumes and job applications
+- **Instant Results** - Get your optimized resume in seconds
+- **Responsive Design** - Works seamlessly on desktop, tablet, and mobile devices
+- **Beautiful UI** - Modern, sleek design with smooth animations
+- **Secure** - Your data is private and secure
 
 ## Screenshots
 
