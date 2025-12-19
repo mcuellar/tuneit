@@ -8,6 +8,8 @@ import {
   parseSalaryNumber,
 } from '../utils/salary';
 
+
+const OPENAI_MODEL_4_MINI = 'gpt-4o-mini';
 const OPENAI_MODEL = 'gpt-5-mini';
 const STORAGE_WARNING = 'Set VITE_OPENAI_API_KEY in your Vite environment to enable OpenAI formatting.';
 
@@ -30,7 +32,7 @@ export async function formatJobDescription(jobDescription) {
   }
 
   const body = {
-    model: 'gpt-4o-mini',
+    model: OPENAI_MODEL_4_MINI,
     temperature: 0.3,
     messages: [
       {
@@ -72,6 +74,7 @@ export async function formatJobDescription(jobDescription) {
   const payload = await response.json();
   const markdown = extractMessageContent(payload);
 
+
   if (!markdown) {
     console.error('[OpenAI] formatJobDescription missing content payload:', payload);
     throw new Error('OpenAI response did not include formatted content.');
@@ -99,7 +102,7 @@ export async function formatBaseResume(rawResume) {
   }
 
   const body = {
-    model: 'gpt-4o-mini',
+    model: OPENAI_MODEL_4_MINI,
     temperature: 0.3,
     messages: [
       {
@@ -243,15 +246,54 @@ async function safeParseJSON(response) {
 }
 
 function localMarkdownFallback(raw) {
-  const normalized = raw.replace(/\r\n/g, '\n').trim();
-  const [firstLine = 'Job Description'] = normalized.split('\n').filter(Boolean);
+  const normalized = raw.replace(/\r\n?/g, '\n').trim();
+  if (!normalized) {
+    return '# Job Description';
+  }
 
-  return `# ${firstLine.replace(/^[#\s]+/, '')}\n\n${normalized}`;
+  const lines = normalized.split('\n');
+  const firstContentIndex = lines.findIndex(line => line.trim().length > 0);
+  if (firstContentIndex === -1) {
+    return '# Job Description';
+  }
+
+  const headingSource = lines[firstContentIndex];
+  const trimmedHeading = headingSource.trim();
+  const remainingLines = lines.slice(firstContentIndex + 1);
+  const hasAdditionalContent = remainingLines.some(line => line.trim().length > 0);
+
+  if (trimmedHeading.startsWith('#')) {
+    return normalized;
+  }
+
+  const heading = trimmedHeading.replace(/^[#\s]+/, '').trim() || 'Job Description';
+  if (!hasAdditionalContent) {
+    return `# ${heading}`;
+  }
+
+  let body = remainingLines.join('\n').trim();
+  if (!body) {
+    return `# ${heading}`;
+  }
+
+  const duplicateHeadingPattern = new RegExp(
+    `^(?:#{1,6}\\s*)?${escapeRegExp(heading)}\\s*(?:\\n|$)`,
+    'i',
+  );
+  if (duplicateHeadingPattern.test(body)) {
+    body = body.replace(duplicateHeadingPattern, '').trimStart();
+  }
+
+  return `# ${heading}\n\n${body}`.trim();
 }
 
 function localResumeFallback(baseResume, jobDescription, jobTitle) {
   const heading = jobTitle ? `# ${jobTitle} Resume (Dev Fallback)` : '# Tailored Resume (Dev Fallback)';
   return `${heading}\n\n> This resume was generated using the local development fallback.\n\n${baseResume}\n\n---\n\n## Target Role Notes\n\n${jobDescription}`;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&');
 }
 
 function localBaseResumeFallback(content) {
