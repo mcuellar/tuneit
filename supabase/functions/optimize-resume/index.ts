@@ -5,24 +5,25 @@
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
-console.log("Hello from Functions!")
-console.log("ALL ENV VARS:", Deno.env.toObject());
-
+console.log("Hello from optimize-resume!")
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MODEL='gpt-4o-mini';
+const MODEL='gpt-5-mini';
 
 // System prompt for job description formatting
 const SYSTEM_PROMPT = `
-You are a helpful assistant that formats job descriptions into clean, well-structured markdown with appropriate headers.
-The very first line must be a level-one heading in the format # Company Name: Job Title using details found in the description.
-Do not add any extra content beyond formatting, even if the input is incomplete.
-Do not include any commentary outside the Markdown formatting. Do not fabricate details not present in the original description.
-After formatting every other section, append a '## Salary' section with three bullet points labeled Range, Min, and Max. Min and Max values need to be in number format. Always use a colon (:) after Min, Max, and Range. Use compensation figures from the source material when available, otherwise state 'Not provided', including for ranges.
+  You are an expert career coach and meticulous fact-checker. 
+  Do not add any commentary or analysis outside of the rewritten resume.
+  Rewrite resumes so they align with a target job description using only information that already exists in the provided base resume. 
+  Do not fabricate or infer new employers, titles, dates, technologies, certifications, responsibilities, or metrics. 
+  You may reorder, merge, or rephrase existing content, but every factual statement must be traceable to the base resume. 
+  If the base resume lacks details for a requirement, leave it out rather than inventing it. 
+  Add appropriate markdown headers where needed (e.g., ## Core Skills, ## Experience). 
+  Ensure to start in a new line when writing Job Descriptions. Usually in a new line after job location and date.
 `;
 
 
@@ -34,20 +35,31 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { job_description } = await req.json();
+    const { resume_content, job_description } = await req.json();
+
+    if (!resume_content) {
+      return new Response(
+      JSON.stringify({ error: 'resume_content is required' }),
+      { 
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
+      );
+    }
 
     if (!job_description) {
       return new Response(
-        JSON.stringify({ error: 'job_description is required' }),
-        { 
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
+      JSON.stringify({ error: 'job_description is required' }),
+      { 
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
       );
     }
 
     // OpenAI API configuration
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+
     console.log("OpenAI API Key:", openaiApiKey ? 'Loaded' : 'Not Found');
     if (!openaiApiKey) {
       return new Response(
@@ -58,6 +70,8 @@ Deno.serve(async (req) => {
         }
       );
     }
+
+    const USER_PROMPT = `Please format the following resume content in markdown format with appropriate headers:\n\n${resume_content.trim()}`;
 
     // Call OpenAI API to format the job description
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -75,11 +89,16 @@ Deno.serve(async (req) => {
           },
           {
             role: 'user',
-            content: `Please format the following job description in markdown format with appropriate headers:\n\n${job_description}`
+            content: `Please format the following resume content in markdown format with appropriate headers:\n\n${resume_content.trim()}
+            Target Job Description:\n\n${job_description.trim()}\n\n
+            Rewrite the resume so it is tailored to this role.
+            Rephrase and reprioritize existing achievements to match the role, mirror the terminology of the job description when appropriate, 
+            and keep the tone professional.
+            `
           }
         ],
-        temperature: 0.3,
-        max_tokens: 2200,
+        temperature: 1,
+        max_completion_tokens: 4096,
       }),
     });
 
@@ -107,23 +126,11 @@ Deno.serve(async (req) => {
       );
     }
     
-    const formattedJobDescription = data.choices[0].message.content;
-
-    const salaryMin = formattedJobDescription.match(/Min:\s*\$?([\d,]+)/i)?.[1] || 'Not provided';
-    const salaryMax = formattedJobDescription.match(/Max:\s*\$?([\d,]+)/i)?.[1] || 'Not provided';
-    const salaryRange = formattedJobDescription.match(/Range:\s*([\$\d, -]+)/i)?.[1] || 'Not provided';
-
-    console.log('Extracted Salary Information:');
-    console.log('Min:', salaryMin);
-    console.log('Max:', salaryMax);
-    console.log('Range:', salaryRange);
+    const openai_response = data.choices[0].message.content;
 
     return new Response(
       JSON.stringify({ 
-        formatted_job_description: formattedJobDescription,
-        salary_min: salaryMin,
-        salary_max: salaryMax,
-        salary_range: salaryRange, 
+        optimized_resume: openai_response,
         success: true
       }),
       { 
@@ -142,12 +149,13 @@ Deno.serve(async (req) => {
   }
 })
 
+
 /* To invoke locally:
 
   1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
   2. Make an HTTP request:
 
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/format-job' \
+  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/optimize-resume' \
     --header 'Authorization: Bearer ****' \
     --header 'Content-Type: application/json' \
     --data '{"name":"Functions"}'
