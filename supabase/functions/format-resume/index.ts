@@ -25,12 +25,14 @@ Do not include any commentary outside the Markdown formatting. Do not fabricate 
 `;
 
 
-
 Deno.serve(async (req) => {
 // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+
+  console.log("Client IP:", req.headers.get('x-forwarded-for'));
+  console.log("Browser Info:", req.headers.get('user-agent'));
 
   try {
     const { resume_content } = await req.json();
