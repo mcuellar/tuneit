@@ -106,11 +106,11 @@ Deno.serve(async (req) => {
       );
     }
     
-    const formattedJobDescription = data.choices[0].message.content;
+    const formattedResume = data.choices[0].message.content;
 
     return new Response(
       JSON.stringify({ 
-        formatted_job_description: formattedJobDescription,
+        formatted_resume: formattedResume,
         success: true
       }),
       { 

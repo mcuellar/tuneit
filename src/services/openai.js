@@ -90,45 +90,44 @@ export async function formatBaseResume(rawResume) {
     throw new Error('Add resume details before formatting.');
   }
 
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+  const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || 'http://127.0.0.1:54321').replace(/\/$/, '');
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  if (!apiKey) {
+  if (!supabaseAnonKey) {
     if (import.meta.env.PROD) {
-      throw new Error(STORAGE_WARNING);
+      throw new Error('[TuneIt] Missing VITE_SUPABASE_ANON_KEY. Update .env.local with your local anon key.');
     }
 
-    console.warn('[TuneIt] Missing VITE_OPENAI_API_KEY. Returning development fallback for base resume.');
+    console.warn('[TuneIt] Missing VITE_SUPABASE_ANON_KEY. Returning development fallback for base resume.');
     return localBaseResumeFallback(trimmed);
   }
 
-  const body = {
-    model: OPENAI_MODEL_4_MINI,
-    temperature: 0.3,
-    messages: [
-      {
-        role: 'system',
-        content:
-          'You are an elite resume editor. Convert raw resume notes into polished Markdown with concise headings and bullet points. Use only the provided facts—never invent employers, titles, dates, skills, or metrics. Begin with a level-one heading that includes the candidate name if present, otherwise "Professional Profile". Include the sections Summary, Experience, Skills, Education, and Certifications only when details exist, preserving chronological order. Respond with Markdown only.',
-      },
-      {
-        role: 'user',
-        content: `Format the following resume content into Markdown using the rules above. Retain every factual detail without embellishing.\n\n${trimmed}`,
-      },
-    ],
-    max_tokens: 1200,
+  const requestPayload = {
+    resume_content: trimmed,
   };
 
-  const payloadSize = new TextEncoder().encode(JSON.stringify(body)).length;
+  const payloadSize = new TextEncoder().encode(JSON.stringify(requestPayload)).length;
   logSize('Base resume format payload', payloadSize);
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  let response;
+
+  try {
+    response = await fetch(`${supabaseUrl}/functions/v1/format-resume`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        apikey: supabaseAnonKey,
+      },
+      body: JSON.stringify(requestPayload),
+    });
+  } catch (error) {
+    console.error('[TuneIt] Failed to reach local resume formatter.', error);
+    if (import.meta.env.PROD) {
+      throw new Error('Unable to reach Supabase Edge function for resume formatting.');
+    }
+    return localBaseResumeFallback(trimmed);
+  }
 
   const responseClone = response.clone();
   const responseText = await responseClone.text();
@@ -137,19 +136,26 @@ export async function formatBaseResume(rawResume) {
 
   if (!response.ok) {
     const errorPayload = await safeParseJSON(response);
-    const message = errorPayload?.error?.message || 'Unable to format your resume with OpenAI.';
+    const message =
+      errorPayload?.error?.message || errorPayload?.message || 'Unable to format your resume with Supabase.';
     throw new Error(message);
   }
 
-  const payload = await response.json();
-  const markdown = extractMessageContent(payload);
+  const responsePayload = await response.json();
+  const formattedResume = responsePayload?.formatted_resume;
+  const success = responsePayload?.success ?? true;
 
-  if (!markdown) {
-    console.error('[OpenAI] formatBaseResume missing content payload:', payload);
-    throw new Error('OpenAI response did not include resume content.');
+  if (success === false) {
+    const errorMessage = responsePayload?.error || 'Supabase formatter reported a failure.';
+    throw new Error(errorMessage);
   }
 
-  return normalizeMarkdown(markdown);
+  if (!formattedResume) {
+    console.error('[Supabase] formatBaseResume missing formatted_resume payload:', responsePayload);
+    throw new Error('Supabase response did not include resume content.');
+  }
+
+  return normalizeMarkdown(formattedResume);
 }
 
 export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
