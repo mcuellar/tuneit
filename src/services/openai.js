@@ -12,6 +12,7 @@ import {
 const OPENAI_MODEL_4_MINI = 'gpt-4o-mini';
 const OPENAI_MODEL = 'gpt-5-mini';
 const STORAGE_WARNING = 'Set VITE_OPENAI_API_KEY in your Vite environment to enable OpenAI formatting.';
+const DEFAULT_SUPABASE_FUNCTIONS_URL = 'http://127.0.0.1:54321';
 
 export async function formatJobDescription(jobDescription) {
   const trimmed = jobDescription?.trim();
@@ -20,45 +21,44 @@ export async function formatJobDescription(jobDescription) {
     throw new Error('Please provide a job description to format.');
   }
 
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+  const supabaseUrl = getSupabaseFunctionsUrl();
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  if (!apiKey) {
+  if (!supabaseAnonKey) {
     if (import.meta.env.PROD) {
-      throw new Error(STORAGE_WARNING);
+      throw new Error('[TuneIt] Missing VITE_SUPABASE_ANON_KEY. Update .env.local with your local anon key.');
     }
 
-    console.warn('[TuneIt] Missing VITE_OPENAI_API_KEY. Falling back to local formatter for development.');
+    console.warn('[TuneIt] Missing VITE_SUPABASE_ANON_KEY. Falling back to local formatter for development.');
     return buildFormattedResponse(localMarkdownFallback(trimmed), trimmed);
   }
 
-  const body = {
-    model: OPENAI_MODEL_4_MINI,
-    temperature: 0.3,
-    messages: [
-      {
-        role: 'system',
-        content:
-          'You are an assistant that formats job descriptions for recruiters. Return polished Markdown with clear section headings, bullet lists, and emphasis where appropriate. Do not include any commentary outside the Markdown. The very first line must be a level-one heading in the format `# Company Name: Job Title` using details found in the description. After formatting every other section, append a `## Salary` section with three bullet points labeled Range, Minimum, and Maximum. Use compensation figures from the source material when available, otherwise state `Not provided`. Immediately after the Salary section, append an HTML comment exactly in the format `<!-- salary_summary: {"range":"$120k - $150k per year","min":120000,"max":150000,"currency":"USD","period":"year"} -->`. Use numeric min/max values without currency symbols or commas, ISO currency codes, and null for unknown fields. Do not wrap the comment in code fences or add any prose outside the Markdown.',
-      },
-      {
-        role: 'user',
-        content: `Format the following job description using Markdown. Do not invent new details, and always follow the salary instructions above by clearly stating when data is unavailable.\n\n${trimmed}`,
-      },
-    ],
-    max_tokens: 2200,
+  const requestPayload = {
+    job_description: trimmed,
   };
 
-  const payloadSize = new TextEncoder().encode(JSON.stringify(body)).length;
+  const payloadSize = new TextEncoder().encode(JSON.stringify(requestPayload)).length;
   logSize('Job format payload', payloadSize);
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  let response;
+
+  try {
+    response = await fetch(`${supabaseUrl}/functions/v1/format-job`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        apikey: supabaseAnonKey,
+      },
+      body: JSON.stringify(requestPayload),
+    });
+  } catch (error) {
+    console.error('[TuneIt] Failed to reach local job formatter.', error);
+    if (import.meta.env.PROD) {
+      throw new Error('Unable to reach Supabase Edge function for job formatting.');
+    }
+    return buildFormattedResponse(localMarkdownFallback(trimmed), trimmed);
+  }
 
   const responseClone = response.clone();
   const responseText = await responseClone.text();
@@ -67,20 +67,43 @@ export async function formatJobDescription(jobDescription) {
 
   if (!response.ok) {
     const errorPayload = await safeParseJSON(response);
-    const message = errorPayload?.error?.message || 'Unable to format job description with OpenAI.';
+    const message =
+      errorPayload?.error?.message || errorPayload?.message || 'Unable to format job description with Supabase.';
     throw new Error(message);
   }
 
-  const payload = await response.json();
-  const markdown = extractMessageContent(payload);
+  const responsePayload = await response.json();
+  const formattedJob = responsePayload?.formatted_job_description;
+  const success = responsePayload?.success ?? true;
 
-
-  if (!markdown) {
-    console.error('[OpenAI] formatJobDescription missing content payload:', payload);
-    throw new Error('OpenAI response did not include formatted content.');
+  if (success === false) {
+    const errorMessage = responsePayload?.error || 'Supabase formatter reported a failure.';
+    throw new Error(errorMessage);
   }
 
-  return buildFormattedResponse(markdown, trimmed);
+  if (!formattedJob) {
+    console.error('[Supabase] formatJobDescription missing formatted_job_description payload:', responsePayload);
+    throw new Error('Supabase response did not include formatted job content.');
+  }
+
+  const hasSalaryFields =
+    responsePayload?.salary_range ||
+    responsePayload?.salary_min != null ||
+    responsePayload?.salary_max != null ||
+    responsePayload?.salary_currency ||
+    responsePayload?.salary_period;
+
+  const salaryDetailsFromResponse = hasSalaryFields
+    ? normalizeSalaryDetails({
+        range: responsePayload?.salary_range ?? null,
+        min: parseSalaryField(responsePayload?.salary_min),
+        max: parseSalaryField(responsePayload?.salary_max),
+        currency: responsePayload?.salary_currency ?? null,
+        period: responsePayload?.salary_period ?? null,
+      })
+    : null;
+
+  return buildFormattedResponse(formattedJob, trimmed, salaryDetailsFromResponse);
 }
 
 export async function formatBaseResume(rawResume) {
@@ -90,7 +113,7 @@ export async function formatBaseResume(rawResume) {
     throw new Error('Add resume details before formatting.');
   }
 
-  const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || 'http://127.0.0.1:54321').replace(/\/$/, '');
+  const supabaseUrl = getSupabaseFunctionsUrl();
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   if (!supabaseAnonKey) {
@@ -243,6 +266,28 @@ function logSize(label, bytes) {
   console.log(`[OpenAI] ${label}: ${bytes} bytes | ${kb.toFixed(2)} KB | ${mb.toFixed(4)} MB`);
 }
 
+function parseSalaryField(value) {
+  if (value == null || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const parsed = parseSalaryNumber(String(value));
+  return typeof parsed === 'number' && Number.isFinite(parsed) ? parsed : null;
+}
+
+function getSupabaseFunctionsUrl() {
+  const baseUrl =
+    import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
+    import.meta.env.VITE_SUPABASE_URL ||
+    DEFAULT_SUPABASE_FUNCTIONS_URL;
+
+  return baseUrl.replace(/\/$/, '');
+}
+
 async function safeParseJSON(response) {
   try {
     return await response.json();
@@ -334,10 +379,22 @@ function normalizeMarkdown(raw) {
 const SALARY_COMMENT_REGEX = /<!--\s*salary_summary\s*:(.*?)-->/is;
 const SALARY_SECTION_REGEX = /(#{2,6}\s*salary\b[^\n]*)([\s\S]*?)(?=\n#{1,6}\s|$)/i;
 
-function buildFormattedResponse(rawMarkdown, sourceText) {
+function buildFormattedResponse(rawMarkdown, sourceText, salaryOverride) {
   const normalized = normalizeMarkdown(rawMarkdown);
+  const overrideDetails = salaryOverride ? normalizeSalaryDetails(salaryOverride) : null;
   let { sanitizedMarkdown, salary } = extractSalaryMetadata(normalized);
   let hasSectionFlag = hasSalarySection(sanitizedMarkdown);
+
+  const overrideHasValues =
+    overrideDetails &&
+    (overrideDetails.range || typeof overrideDetails.min === 'number' || typeof overrideDetails.max === 'number');
+
+  if (overrideHasValues) {
+    const withoutSection = removeSalarySection(sanitizedMarkdown);
+    const withOverrideSection = appendSalarySection(withoutSection, overrideDetails);
+    ({ sanitizedMarkdown, salary } = extractSalaryMetadata(withOverrideSection));
+    hasSectionFlag = hasSalarySection(sanitizedMarkdown);
+  }
 
   if (!salary && hasSectionFlag) {
     const derived = deriveSalaryFromSection(sanitizedMarkdown);
