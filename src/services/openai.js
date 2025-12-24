@@ -193,45 +193,46 @@ export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
     throw new Error('Select a job description before optimizing a resume.');
   }
 
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+  const supabaseUrl = getSupabaseFunctionsUrl();
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  if (!apiKey) {
+  if (!supabaseAnonKey) {
     if (import.meta.env.PROD) {
-      throw new Error(STORAGE_WARNING);
+      throw new Error('[TuneIt] Missing VITE_SUPABASE_ANON_KEY. Update .env.local with your local anon key.');
     }
 
-    console.warn('[TuneIt] Missing VITE_OPENAI_API_KEY. Returning development fallback resume.');
+    console.warn('[TuneIt] Missing VITE_SUPABASE_ANON_KEY. Returning development fallback resume.');
     return localResumeFallback(resumeTrimmed, jobTrimmed, jobTitle);
   }
 
-  const body = {
-    model: OPENAI_MODEL,
-    temperature: 1,
-    messages: [
-      {
-        role: 'system',
-        content:
-          'You are an expert career coach and meticulous fact-checker. Rewrite resumes so they align with a target job description using only information that already exists in the provided base resume. Do not fabricate or infer new employers, titles, dates, technologies, certifications, responsibilities, or metrics. You may reorder, merge, or rephrase existing content, but every factual statement must be traceable to the base resume. If the base resume lacks details for a requirement, leave it out rather than inventing it. Add appropriate markdown headers where needed (e.g., ## Core Skills, ## Experience). Ensure to start in a new line when writing Job Descriptions. Usually in a new line after job location and date.',
-      },
-      {
-        role: 'user',
-        content: `Base resume (source of truth, do not introduce new facts):\n${resumeTrimmed}\n\nTarget job description:\n${jobTrimmed}\n\nRewrite the resume so it is tailored to this role. Rephrase and reprioritize existing achievements to match the role, mirror the terminology of the job description when appropriate, and keep the tone professional. Use the target job title${jobTitle ? ` "${jobTitle}"` : ''} in the summary. If a detail is not present in the base resume, leave it out instead of inventing it. Use proper markdown headers where needed. Keep my name and contact details unchanged and with same format, including any profile links. Begin with a level-one heading containing my name as it appears in the base resume.`,
-      },
-    ],
-    max_completion_tokens: 4096,
+  const requestPayload = {
+    resume_content: resumeTrimmed,
+    job_description: jobTrimmed,
+    ...(jobTitle ? { job_title: jobTitle } : {}),
   };
 
-  const payloadSize = new TextEncoder().encode(JSON.stringify(body)).length;
+  const payloadSize = new TextEncoder().encode(JSON.stringify(requestPayload)).length;
   logSize('Resume optimize payload', payloadSize);
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  let response;
+
+  try {
+    response = await fetch(`${supabaseUrl}/functions/v1/optimize-resume`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        apikey: supabaseAnonKey,
+      },
+      body: JSON.stringify(requestPayload),
+    });
+  } catch (error) {
+    console.error('[TuneIt] Failed to reach local resume optimizer.', error);
+    if (import.meta.env.PROD) {
+      throw new Error('Unable to reach Supabase Edge function for resume optimization.');
+    }
+    return localResumeFallback(resumeTrimmed, jobTrimmed, jobTitle);
+  }
 
   const responseClone = response.clone();
   const responseText = await responseClone.text();
@@ -240,24 +241,26 @@ export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
 
   if (!response.ok) {
     const errorPayload = await safeParseJSON(response);
-    const message = errorPayload?.error?.message || 'Unable to optimize resume with OpenAI.';
+    const message =
+      errorPayload?.error?.message || errorPayload?.message || 'Unable to optimize resume with Supabase.';
     throw new Error(message);
   }
 
-  // const payload = await response.json();
-  // const markdown = extractMessageContent(payload);
-  const output = await response.json();
-  const responseContent = output.choices?.[0]?.message?.content;
+  const responsePayload = await response.json();
+  const optimizedResume = responsePayload?.optimized_resume;
+  const success = responsePayload?.success ?? true;
 
-  console.log('[OpenAI] optimizeResume response content:', responseContent); 
+  if (success === false) {
+    const errorMessage = responsePayload?.error || 'Supabase optimizer reported a failure.';
+    throw new Error(errorMessage);
+  }
 
-  // if (!markdown) {
-  //   console.error('[OpenAI] optimizeResume missing content payload:', payload);
-  //   throw new Error('OpenAI response did not include resume content.');
-  // }
+  if (!optimizedResume) {
+    console.error('[Supabase] optimizeResume missing optimized_resume payload:', responsePayload);
+    throw new Error('Supabase response did not include optimized resume content.');
+  }
 
-  return responseContent;
-  // return normalizeMarkdown(markdown);
+  return normalizeMarkdown(optimizedResume);
 }
 
 function logSize(label, bytes) {
