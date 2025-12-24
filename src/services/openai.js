@@ -7,8 +7,7 @@ import {
   normalizeSalaryDetails,
   parseSalaryNumber,
 } from '../utils/salary';
-
-const DEFAULT_SUPABASE_FUNCTIONS_URL = 'http://127.0.0.1:54321';
+import { getSupabaseFunctionsUrl } from './functionsClient';
 
 export async function formatJobDescription(jobDescription) {
   const trimmed = jobDescription?.trim();
@@ -276,15 +275,6 @@ function parseSalaryField(value) {
 
   const parsed = parseSalaryNumber(String(value));
   return typeof parsed === 'number' && Number.isFinite(parsed) ? parsed : null;
-}
-
-function getSupabaseFunctionsUrl() {
-  const baseUrl =
-    import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
-    import.meta.env.VITE_SUPABASE_URL ||
-    DEFAULT_SUPABASE_FUNCTIONS_URL;
-
-  return baseUrl.replace(/\/$/, '');
 }
 
 async function safeParseJSON(response) {

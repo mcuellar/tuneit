@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { sendWelcomeEmail } from '../services/email';
 import './Register.css';
 
 function Register() {
@@ -77,12 +78,23 @@ function Register() {
 
     setIsSubmitting(true);
     try {
-      await signUp({
+      const registrationPayload = {
         email: formData.email,
         password: formData.password,
         firstName: formData.firstName,
         lastName: formData.lastName,
-      });
+      };
+
+      await signUp(registrationPayload);
+
+      try {
+        await sendWelcomeEmail({
+          email: registrationPayload.email,
+          firstName: registrationPayload.firstName,
+        });
+      } catch (emailError) {
+        console.error('[TuneIt] Unable to send welcome email.', emailError);
+      }
 
       setFormData({
         firstName: '',
@@ -92,7 +104,7 @@ function Register() {
         confirmPassword: ''
       });
 
-      navigate('/dashboard/resumes');
+      navigate('/dashboard');
     } catch (signUpError) {
       console.error('[TuneIt] Registration failed', signUpError);
     } finally {
