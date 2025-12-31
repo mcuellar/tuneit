@@ -8,6 +8,7 @@ import {
   parseSalaryNumber,
 } from '../utils/salary';
 import { getSupabaseFunctionsUrl } from './functionsClient';
+import { supabase } from './supabaseClient';
 
 export async function formatJobDescription(jobDescription) {
   const trimmed = jobDescription?.trim();
@@ -18,6 +19,9 @@ export async function formatJobDescription(jobDescription) {
 
   const supabaseUrl = getSupabaseFunctionsUrl();
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  const { data} = await supabase.auth.getSession();
+  const accessToken = data?.session?.access_token;
 
   if (!supabaseAnonKey) {
     if (import.meta.env.PROD) {
@@ -42,7 +46,7 @@ export async function formatJobDescription(jobDescription) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${supabaseAnonKey}`,
+        Authorization: `Bearer ${accessToken}`,
         apikey: supabaseAnonKey,
       },
       body: JSON.stringify(requestPayload),
