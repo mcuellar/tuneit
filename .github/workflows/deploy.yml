@@ -11,13 +11,12 @@ permissions:
   pages: write
   id-token: write
 
-env:
-  VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
 
     steps:
       - name: Checkout code
