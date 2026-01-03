@@ -115,6 +115,10 @@ export async function formatBaseResume(rawResume) {
   const supabaseUrl = getSupabaseFunctionsUrl();
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+  const { data} = await supabase.auth.getSession();
+  const accessToken = data?.session?.access_token;
+
+
   if (!supabaseAnonKey) {
     if (import.meta.env.PROD) {
       throw new Error('[TuneIt] Missing VITE_SUPABASE_ANON_KEY. Update .env.local with your local anon key.');
@@ -138,7 +142,7 @@ export async function formatBaseResume(rawResume) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${supabaseAnonKey}`,
+        Authorization: `Bearer ${accessToken}`,
         apikey: supabaseAnonKey,
       },
       body: JSON.stringify(requestPayload),
@@ -195,6 +199,10 @@ export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
   const supabaseUrl = getSupabaseFunctionsUrl();
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+  const { data} = await supabase.auth.getSession();
+  const accessToken = data?.session?.access_token;
+
+
   if (!supabaseAnonKey) {
     if (import.meta.env.PROD) {
       throw new Error('[TuneIt] Missing VITE_SUPABASE_ANON_KEY. Update .env.local with your local anon key.');
@@ -220,7 +228,7 @@ export async function optimizeResume({ baseResume, jobDescription, jobTitle }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${supabaseAnonKey}`,
+        Authorization: `Bearer ${accessToken}`,
         apikey: supabaseAnonKey,
       },
       body: JSON.stringify(requestPayload),
