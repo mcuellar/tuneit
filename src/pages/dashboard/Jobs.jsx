@@ -2,12 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+import pdfMake from 'pdfmake/build/pdfmake';
+import * as pdfFonts from 'pdfmake/build/vfs_fonts';
+import htmlToPdfmake from 'html-to-pdfmake';
 import { formatBaseResume, formatJobDescription, optimizeResume } from '../../services/openai';
 import { formatSalaryRange, normalizeSalaryDetails } from '../../utils/salary';
 import { useAuth } from '../../context/AuthContext';
 import supabase from '../../services/supabaseClient';
+
+if (pdfFonts?.pdfMake?.vfs) {
+  pdfMake.vfs = pdfFonts.pdfMake.vfs;
+}
 
 const RESUMES_STORAGE_KEY = 'tuneit_resumes_v1';
 const BASE_RESUME_COLLAPSE_KEY = 'tuneit_base_resume_collapsed_v1';
@@ -593,57 +598,57 @@ function DashboardJobs() {
   };
 
   const createPrintablePreview = () => {
-    if (typeof document === 'undefined' || !jobPreviewRef.current) {
+    if (typeof window === 'undefined' || !jobPreviewRef.current) {
       return null;
     }
 
-    const source = jobPreviewRef.current;
-    const sourceBounds = source.getBoundingClientRect();
-    const computed = typeof window !== 'undefined' ? window.getComputedStyle(source) : null;
-    const backgroundColor = computed && computed.backgroundColor && computed.backgroundColor !== 'rgba(0, 0, 0, 0)'
-      ? computed.backgroundColor
-      : '#ffffff';
-    const textColor = computed && computed.color ? computed.color : '#1f2333';
-    const fontFamily = computed && computed.fontFamily ? computed.fontFamily : 'inherit';
-    const width = sourceBounds && sourceBounds.width ? Math.ceil(sourceBounds.width) : 680;
+    let htmlFragment = jobPreviewRef.current.innerHTML?.trim();
+    if (!htmlFragment) {
+      return null;
+    }
 
-    const wrapper = document.createElement('div');
-  wrapper.style.position = 'absolute';
-  wrapper.style.top = '-9999px';
-  wrapper.style.left = '-9999px';
-  wrapper.style.width = `${Math.max(480, width)}px`;
-  wrapper.style.maxWidth = `${Math.max(480, width)}px`;
-    wrapper.style.padding = '0';
-    wrapper.style.backgroundColor = backgroundColor;
-    wrapper.style.color = textColor;
-    wrapper.style.zIndex = '-1';
-    wrapper.style.pointerEvents = 'none';
-    wrapper.style.fontFamily = fontFamily;
-  wrapper.style.overflow = 'visible';
-  wrapper.style.lineHeight = computed && computed.lineHeight ? computed.lineHeight : 'inherit';
+    // Clean up empty paragraphs that pdfmake struggles with.
+    htmlFragment = htmlFragment.replace(/<p>\s*<\/p>/g, '');
 
-    const clone = source.cloneNode(true);
-    clone.style.maxHeight = 'none';
-    clone.style.overflow = 'visible';
-    clone.style.paddingRight = '0';
-    clone.style.boxSizing = 'border-box';
-    clone.style.backgroundColor = backgroundColor;
-    clone.style.color = textColor;
-    clone.style.fontFamily = fontFamily;
-  clone.style.lineHeight = wrapper.style.lineHeight;
-  clone.style.width = '100%';
-  clone.style.maxWidth = '100%';
+    // Collapse multiple newlines.
+    htmlFragment = htmlFragment.replace(/\n{2,}/g, '\n');
 
-    wrapper.appendChild(clone);
-    document.body.appendChild(wrapper);
+    // Remove default margins from block elements.
+    htmlFragment = htmlFragment.replace(/<p>/g, '<p style="margin-top:0;margin-bottom:0;">');
+    htmlFragment = htmlFragment.replace(/<li>/g, '<li style="margin-top:0;margin-bottom:0; padding:0;">');
+    htmlFragment = htmlFragment.replace(/<h1>/g, '<h1 style="margin-top:0;margin-bottom:0; padding:0;">');
+    htmlFragment = htmlFragment.replace(/<h2>/g, '<h2 style="margin-top:0;margin-bottom:0; padding:0;">');
+    htmlFragment = htmlFragment.replace(/<h3>/g, '<h3 style="margin-top:0;margin-bottom:0; padding:0;">');
+
+    const pdfContent = htmlToPdfmake(`<div>${htmlFragment}</div>`, {
+      window,
+      defaultStyles: {
+        h1: { fontSize: 20, bold: true, margin: [0, 0, 0.5, 0] }, // Top, Right, Bottom, Left
+        h2: { fontSize: 16, bold: true, margin: [0, 0, 0.5, 0] },
+        h3: { fontSize: 14, bold: true, margin: [0, 0, 0.5, 0] },
+        p: { margin: [0, 0, 0.5, 0] },
+        li: { margin: [0, 0, 0, 0] },
+        strong: { bold: true },
+        em: { italics: true },
+      },
+      styles: { 
+        h1: { margin: [0, 0, 0.5, 0] }, 
+        h2: { margin: [0, 0, 0.5, 0] }, 
+        h3: { margin: [0, 0, 0.5, 0] }, 
+        p: { margin: [0, 0, .5, 0] }, 
+        li: { margin: [0, 0, 0, 0] }, 
+    }
+    });
 
     return {
-      node: wrapper,
-      cleanup: () => {
-        if (wrapper.parentNode) {
-          wrapper.parentNode.removeChild(wrapper);
-        }
+      pageSize: 'LETTER',
+      pageMargins: [36, 40, 36, 40],// Left, Top, Right, Bottom in points
+      defaultStyle: {
+        fontSize: 11,
+        lineHeight: 1.28,
+        color: '#1f2333',
       },
+      content: Array.isArray(pdfContent) ? pdfContent : [pdfContent],
     };
   };
 
@@ -671,130 +676,23 @@ function DashboardJobs() {
     setIsDownloadingPreview(true);
     showPreviewBanner(null);
 
-    const printable = createPrintablePreview();
-    if (!printable) {
+    const docDefinition = createPrintablePreview();
+    if (!docDefinition) {
       setIsDownloadingPreview(false);
       showPreviewBanner({ type: 'error', text: 'Unable to prepare PDF. Please try again.' });
       return;
     }
 
     try {
-      const pdf = new jsPDF({ unit: 'pt', format: 'letter', orientation: 'portrait' });
       const suffix = previewMode === PREVIEW_MODES.RESUME ? 'resume' : 'job-description';
       const filename = createDownloadFilename(suffix);
-      const scaleBase = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
-      const scale = Math.min(2.8, Math.max(1.8, scaleBase));
+      pdfMake.createPdf(docDefinition).download(filename);
 
-      const captureTarget = printable.node.firstChild || printable.node;
-      const captureRect = captureTarget.getBoundingClientRect();
-      const rawAnchors = Array.from(captureTarget.querySelectorAll('a[href]')).map(anchor => {
-        const rect = anchor.getBoundingClientRect();
-        return {
-          href: anchor.getAttribute('href') || anchor.href || '',
-          left: rect.left - captureRect.left,
-          top: rect.top - captureRect.top,
-          width: rect.width,
-          height: rect.height,
-        };
-      }).filter(item => item.href && item.width > 1 && item.height > 1);
-
-      const canvas = await html2canvas(captureTarget, {
-        scale,
-        backgroundColor: '#ffffff',
-        scrollX: 0,
-        scrollY: 0,
-        useCORS: true,
-      });
-
-      const scaleFactor = captureRect.width ? canvas.width / captureRect.width : scale;
-      const anchorRegions = rawAnchors.map(anchor => ({
-        href: anchor.href,
-        leftPx: anchor.left * scaleFactor,
-        topPx: anchor.top * scaleFactor,
-        widthPx: anchor.width * scaleFactor,
-        heightPx: anchor.height * scaleFactor,
-      }));
-
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const marginX = 40;
-      const marginY = 48;
-      const printableWidth = pageWidth - marginX * 2;
-      const printableHeight = pageHeight - marginY * 2;
-      const imgWidth = printableWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      const pageHeightPx = Math.floor((canvas.width * printableHeight) / imgWidth);
-      let remainingHeight = canvas.height;
-      let positionPx = 0;
-      let pageIndex = 0;
-
-      const sliceCanvas = document.createElement('canvas');
-
-      while (remainingHeight > 0) {
-        const sliceHeightPx = Math.min(pageHeightPx, remainingHeight);
-        sliceCanvas.width = canvas.width;
-        sliceCanvas.height = sliceHeightPx;
-        const sliceContext = sliceCanvas.getContext('2d');
-        if (!sliceContext) {
-          throw new Error('Unable to capture PDF slice.');
-        }
-        sliceContext.drawImage(
-          canvas,
-          0,
-          positionPx,
-          canvas.width,
-          sliceHeightPx,
-          0,
-          0,
-          canvas.width,
-          sliceHeightPx,
-        );
-
-        const sliceImageData = sliceCanvas.toDataURL('image/png');
-        const sliceHeightPdf = (sliceHeightPx * imgWidth) / canvas.width;
-
-        if (pageIndex > 0) {
-          pdf.addPage();
-        }
-
-        pdf.addImage(sliceImageData, 'PNG', marginX, marginY, imgWidth, sliceHeightPdf);
-
-        const sliceStartPx = positionPx;
-        const sliceEndPx = positionPx + sliceHeightPx;
-        anchorRegions.forEach(anchor => {
-          const anchorBottom = anchor.topPx + anchor.heightPx;
-          if (anchorBottom <= sliceStartPx || anchor.topPx >= sliceEndPx) {
-            return;
-          }
-
-          const overlapTopPx = Math.max(anchor.topPx, sliceStartPx);
-          const overlapBottomPx = Math.min(anchorBottom, sliceEndPx);
-          const overlapHeightPx = Math.max(0, overlapBottomPx - overlapTopPx);
-          const offsetWithinSlicePx = overlapTopPx - sliceStartPx;
-          const linkX = marginX + (anchor.leftPx * imgWidth) / canvas.width;
-          const linkY = marginY + (offsetWithinSlicePx * imgWidth) / canvas.width;
-          const linkWidth = (anchor.widthPx * imgWidth) / canvas.width;
-          const linkHeight = (overlapHeightPx * imgWidth) / canvas.width;
-
-          if (!linkWidth || !linkHeight) {
-            return;
-          }
-
-          pdf.link(linkX, linkY, linkWidth, linkHeight, { url: anchor.href });
-        });
-
-        remainingHeight -= sliceHeightPx;
-        positionPx += sliceHeightPx;
-        pageIndex += 1;
-      }
-
-      pdf.save(filename);
       showPreviewBanner({ type: 'success', text: 'PDF download ready.' });
     } catch (downloadError) {
       console.error('[TuneIt] Unable to download preview PDF.', downloadError);
       showPreviewBanner({ type: 'error', text: 'Unable to download PDF. Please try again.' });
     } finally {
-      printable.cleanup();
       setIsDownloadingPreview(false);
     }
   };
