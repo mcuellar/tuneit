@@ -627,7 +627,7 @@ function DashboardJobs() {
         h2: { fontSize: 16, bold: true, margin: [0, 0, 0.5, 0] },
         h3: { fontSize: 14, bold: true, margin: [0, 0, 0.5, 0] },
         p: { margin: [0, 0, 0.5, 0] },
-        li: { margin: [0, 0, 0, 0] },
+        li: { margin: [1, 0, 2, 0] },
         strong: { bold: true },
         em: { italics: true },
       },
@@ -636,7 +636,7 @@ function DashboardJobs() {
         h2: { margin: [0, 0, 0.5, 0] }, 
         h3: { margin: [0, 0, 0.5, 0] }, 
         p: { margin: [0, 0, .5, 0] }, 
-        li: { margin: [0, 0, 0, 0] }, 
+        li: { margin: [1, 0, 2, 0] }, 
     }
     });
 
