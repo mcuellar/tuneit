@@ -161,7 +161,7 @@ function Register() {
           <div className="form-content">
             <div className="form-header">
               <h2>Create your account</h2>
-              <p>Join thousands of successful job seekers</p>
+              <p>Start getting interviews with the help of TuneIt!</p>
             </div>
 
             <form onSubmit={handleSubmit} className="register-form">

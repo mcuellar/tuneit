@@ -196,7 +196,7 @@ function LandingPage() {
               <h3>Responsive Design</h3>
               <p>Access your resumes anywhere, anytime. Our platform works seamlessly on all devices.</p>
             </div>
-            <div className="feature-card">
+            {/* <div className="feature-card">
               <div className="feature-icon" aria-hidden="true">
                 <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
                   <path d="M9 10h14v4H9z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" fill="none" />
@@ -207,7 +207,7 @@ function LandingPage() {
               </div>
               <h3>Professional Templates</h3>
               <p>Choose from beautifully designed templates that recruiters love.</p>
-            </div>
+            </div> */}
             <div className="feature-card">
               <div className="feature-icon" aria-hidden="true">
                 <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
