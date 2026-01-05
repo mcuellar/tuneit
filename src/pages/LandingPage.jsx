@@ -50,6 +50,7 @@ function LandingPage() {
           <div className="nav-links">
             <a href="/?scroll=features" className="nav-link" onClick={e => handleNavClick(e, 'features')}>Features</a>
             <a href="/?scroll=how-it-works" className="nav-link" onClick={e => handleNavClick(e, 'how-it-works')}>How It Works</a>
+            <Link to="/login" className="nav-link">Login</Link>
             <Link to="/register" className="btn-primary">Get Started</Link>
           </div>
         </div>
@@ -69,6 +70,9 @@ function LandingPage() {
               <Link to="/register" className="btn-cta">Start Optimizing Free</Link>
               <a href="/?scroll=how-it-works" className="btn-secondary" onClick={e => handleNavClick(e, 'how-it-works')}>Learn More</a>
             </div>
+            <p className="login-prompt">
+              Already have an account? <Link to="/login">Log in</Link>
+            </p>
             <div className="hero-badges">
               <div className="badge">
                 <span className="badge-icon" aria-hidden="true">

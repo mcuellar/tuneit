@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import DashboardJobs from './pages/dashboard/Jobs';
 import DashboardResumes from './pages/dashboard/Resumes';
+import DashboardTips from './pages/dashboard/Tips';
 import BillingPage from './pages/dashboard/Billing';
 import SettingsPage from './pages/dashboard/Settings';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -24,6 +25,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />}>
             <Route index element={<DashboardJobs />} />
             <Route path="resumes" element={<DashboardResumes />} />
+            <Route path="tips" element={<DashboardTips />} />
             <Route path="billing" element={<BillingPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

@@ -91,6 +91,20 @@ const ResumesIcon = () => (
   </svg>
 );
 
+const TipsIcon = () => (
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" aria-hidden="true">
+    <path
+      d="M12 3.5a6.5 6.5 0 0 0-3.48 12.01c.31.2.5.53.5.9v1.34c0 .88.72 1.6 1.6 1.6h2.76c.88 0 1.6-.72 1.6-1.6v-1.32c0-.38.18-.72.5-.92A6.5 6.5 0 0 0 12 3.5Z"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path d="M10 20.5h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    <path d="M11 22.3h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+  </svg>
+);
+
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" aria-hidden="true">
     <path
@@ -156,6 +170,14 @@ const NAV_ITEMS = [
     to: '/dashboard',
     description: 'Manage job tailoring workflows in one place.',
     end: true,
+  },
+  {
+    id: 'tips',
+    label: 'Tips',
+    icon: TipsIcon,
+    to: '/dashboard/tips',
+    description: 'Best practices for base resumes and optimizations.',
+    end: false,
   },
   {
     id: 'resumes',
@@ -254,7 +276,7 @@ function Dashboard() {
     .join(' ')
     .trim();
   const primaryLabel = displayName || user?.email || 'Your Workspace';
-  const secondaryLabel = user?.email ? 'Signed in via Supabase Auth' : 'Sign in to sync data';
+  const secondaryLabel = user?.email ? 'Logged in' : 'Sign in to your account';
 
   return (
     <div className={dashboardClasses}>
