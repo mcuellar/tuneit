@@ -27,6 +27,38 @@ function LandingPage() {
     navigate(`/?scroll=${section}`);
   };
 
+  const pricingTiers = [
+    {
+      name: 'Starter',
+      priceLabel: 'Free',
+      description: 'Run up to 2 AI resume optimizations and explore the full flow.',
+      details: ['2 resume optimizations included', 'Great for trying TuneIt'],
+      cta: 'Start Free',
+    },
+    {
+      name: 'Focused',
+      priceLabel: '$5',
+      description: 'Dial in a shortlist of roles with 15 total optimizations.',
+      details: ['15 resume optimizations', 'Ideal for active searches'],
+      cta: 'Choose Focused',
+    },
+    {
+      name: 'Momentum',
+      priceLabel: '$10',
+      description: 'Stay ahead with 30 optimizations for deeper iterations.',
+      details: ['30 resume optimizations', 'Perfect for weekly applications'],
+      cta: 'Choose Momentum',
+    },
+    {
+      name: 'Unlimited',
+      priceLabel: '$25',
+      description: 'Iterate without limits and keep every resume tuned.',
+      details: ['Unlimited resume optimizations', 'Best for power users'],
+      cta: 'Go Unlimited',
+      highlight: true,
+    },
+  ];
+
   return (
     <div className="landing-page">
       <nav className="navbar">
@@ -49,6 +81,7 @@ function LandingPage() {
           </div>
           <div className="nav-links">
             <a href="/?scroll=features" className="nav-link" onClick={e => handleNavClick(e, 'features')}>Features</a>
+            <a href="/?scroll=pricing" className="nav-link" onClick={e => handleNavClick(e, 'pricing')}>Pricing</a>
             <a href="/?scroll=how-it-works" className="nav-link" onClick={e => handleNavClick(e, 'how-it-works')}>How It Works</a>
             <Link to="/login" className="nav-link">Login</Link>
             <Link to="/register" className="btn-primary">Get Started</Link>
@@ -220,6 +253,34 @@ function LandingPage() {
               <h3>Secure & Private</h3>
               <p>Your data is encrypted and secure. We take your privacy seriously.</p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="pricing" className="pricing">
+        <div className="container">
+          <h2 className="section-title">Straightforward Pricing</h2>
+          <p className="section-subtitle">Choose the optimization pack that matches your search pace</p>
+          <div className="pricing-grid">
+            {pricingTiers.map(tier => (
+              <div key={tier.name} className={`pricing-card ${tier.highlight ? 'highlight' : ''}`}>
+                <div className="pricing-card-header">
+                  <p className="tier-name">{tier.name}</p>
+                  <div className="tier-price">
+                    <span className="price-amount">{tier.priceLabel}</span>
+                  </div>
+                  <p className="tier-description">{tier.description}</p>
+                </div>
+                <ul className="pricing-details">
+                  {tier.details.map(detail => (
+                    <li key={detail}>{detail}</li>
+                  ))}
+                </ul>
+                <Link to="/register" className={`btn-pricing ${tier.highlight ? 'btn-pricing-highlight' : ''}`}>
+                  {tier.cta}
+                </Link>
+              </div>
+            ))}
           </div>
         </div>
       </section>

@@ -407,6 +407,128 @@
   line-height: 1.6;
 }
 
+/* Pricing Section */
+.pricing {
+  padding: 90px 0;
+  background: radial-gradient(circle at top, rgba(243, 218, 176, 0.15), rgba(12, 16, 27, 0.8)), #131722;
+  color: #fdfbf7;
+}
+
+.pricing .section-title {
+  color: #fdfbf7;
+}
+
+.pricing .section-subtitle {
+  color: rgba(253, 251, 247, 0.8);
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+}
+
+.pricing-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(242, 212, 146, 0.2);
+  border-radius: 16px;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 1.5rem;
+  box-shadow: 0 18px 40px rgba(12, 16, 27, 0.45);
+  transition: transform 0.3s, border-color 0.3s, box-shadow 0.3s;
+}
+
+.pricing-card.highlight {
+  border-color: rgba(242, 212, 146, 0.6);
+  background: rgba(242, 212, 146, 0.12);
+  transform: translateY(-4px);
+}
+
+.pricing-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(242, 212, 146, 0.5);
+  box-shadow: 0 24px 46px rgba(12, 16, 27, 0.55);
+}
+
+.pricing-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tier-name {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(253, 251, 247, 0.8);
+}
+
+.tier-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.price-amount {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #f2d492;
+}
+
+.tier-description {
+  color: rgba(253, 251, 247, 0.85);
+  line-height: 1.5;
+}
+
+.pricing-details {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  color: rgba(253, 251, 247, 0.85);
+}
+
+.pricing-details li {
+  position: relative;
+  padding-left: 1.25rem;
+  font-weight: 500;
+}
+
+.pricing-details li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #f2d492;
+}
+
+.btn-pricing {
+  text-align: center;
+  padding: 0.85rem 0;
+  border-radius: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  color: #131722;
+  background: #fdfbf7;
+  margin-top: auto;
+  transition: transform 0.3s, box-shadow 0.3s;
+  box-shadow: 0 10px 30px rgba(253, 251, 247, 0.25);
+}
+
+.btn-pricing:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 40px rgba(253, 251, 247, 0.35);
+}
+
+.btn-pricing-highlight {
+  background: linear-gradient(135deg, #f2d492, #f8e8c8);
+  color: #1f2333;
+}
+
 /* How It Works Section */
 .how-it-works {
   padding: 80px 0;
