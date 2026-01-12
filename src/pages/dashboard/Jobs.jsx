@@ -28,6 +28,32 @@ function sortJobsByCreated(entries = []) {
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 }
 
+function normalizeOptionalUrl(value, label = 'URL') {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const candidate = /^(https?:)?\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let parsed;
+
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error(`${label} must be a valid URL (example: https://company.com/apply).`);
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error(`${label} must start with http:// or https://.`);
+  }
+
+  return candidate;
+}
+
 const MARKDOWN_TIPS_SNIPPET = `# Summary
 - Start with a strong achievement or core value
 - Mention the years of experience that match the role
@@ -45,6 +71,8 @@ function DashboardJobs() {
   const location = useLocation();
   const { user, profile, updateBaseResume } = useAuth();
   const [jobInput, setJobInput] = useState('');
+  const [jobApplyUrl, setJobApplyUrl] = useState('');
+  const [jobPortalUrl, setJobPortalUrl] = useState('');
   const [jobs, setJobs] = useState([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [jobsError, setJobsError] = useState(null);
@@ -97,6 +125,9 @@ function DashboardJobs() {
   const [isMarkdownTipsOpen, setIsMarkdownTipsOpen] = useState(false);
   const [isDownloadingPreview, setIsDownloadingPreview] = useState(false);
   const [previewBanner, setPreviewBanner] = useState(null);
+  const [jobLinksDraft, setJobLinksDraft] = useState({ apply: '', portal: '' });
+  const [jobLinksMessage, setJobLinksMessage] = useState(null);
+  const [isSavingLinks, setIsSavingLinks] = useState(false);
   const baseResumeCardRef = useRef(null);
   const baseResumeEditorRef = useRef(null);
   const baseResumeMessageTimeoutRef = useRef(null);
@@ -164,6 +195,8 @@ function DashboardJobs() {
       jobTitle: record.job_title ?? 'Untitled Role',
       location: record.location ?? '',
       locationType: record.location_type ?? '',
+      applyUrl: record.job_apply_url ?? '',
+      portalUrl: record.job_portal_url ?? '',
       hourlyRate: record.hourly_rate ?? null,
       tailoredResume: record.tailored_resume ?? '',
       original: description,
@@ -492,6 +525,19 @@ function DashboardJobs() {
 
   const selectedJob = jobs.find(job => job.id === selectedJobId) || null;
   useEffect(() => {
+    if (!selectedJob) {
+      setJobLinksDraft({ apply: '', portal: '' });
+      setJobLinksMessage(null);
+      return;
+    }
+
+    setJobLinksDraft({
+      apply: selectedJob.applyUrl || '',
+      portal: selectedJob.portalUrl || '',
+    });
+    setJobLinksMessage(null);
+  }, [selectedJob]);
+  useEffect(() => {
     if (!selectedJob && isCompareView) {
       setIsCompareView(false);
     }
@@ -510,6 +556,14 @@ function DashboardJobs() {
   );
   const baseResumeDraftTrimmed = baseResumeDraft.trim();
   const baseResumeHasChanges = baseResumeDraftTrimmed !== baseResume.trim();
+  const hasSavedJobLinks = Boolean(selectedJob?.applyUrl || selectedJob?.portalUrl);
+  const jobLinksDirty = useMemo(() => {
+    const draftApply = (jobLinksDraft.apply || '').trim();
+    const draftPortal = (jobLinksDraft.portal || '').trim();
+    const savedApply = (selectedJob?.applyUrl || '').trim();
+    const savedPortal = (selectedJob?.portalUrl || '').trim();
+    return draftApply !== savedApply || draftPortal !== savedPortal;
+  }, [jobLinksDraft, selectedJob]);
   const progressModalConfig = isOptimizing
     ? {
         title: 'Optimizing… Please wait',
@@ -544,6 +598,18 @@ function DashboardJobs() {
     setIsSaving(true);
     setIsFormattingJob(true);
     setError(null);
+    let normalizedApplyUrl = null;
+    let normalizedPortalUrl = null;
+
+    try {
+      normalizedApplyUrl = normalizeOptionalUrl(jobApplyUrl, 'Job apply URL');
+      normalizedPortalUrl = normalizeOptionalUrl(jobPortalUrl, 'Job portal URL');
+    } catch (urlError) {
+      setError(urlError.message);
+      setIsSaving(false);
+      setIsFormattingJob(false);
+      return;
+    }
 
     try {
       const { markdown: formatted, salary } = await formatJobDescription(trimmed);
@@ -565,6 +631,8 @@ function DashboardJobs() {
             : null,
         location: null,
         location_type: null,
+        job_apply_url: normalizedApplyUrl,
+        job_portal_url: normalizedPortalUrl,
         tailored_resume: null,
       };
 
@@ -588,6 +656,8 @@ function DashboardJobs() {
       setJobs(prev => sortJobsByCreated([merged, ...prev]));
       setSelectedJobId(merged.id);
       setJobInput('');
+      setJobApplyUrl('');
+      setJobPortalUrl('');
     } catch (formatError) {
       console.error('[TuneIt] Unable to save job description.', formatError);
       setError(formatError.message || 'Unable to save job. Please try again.');
@@ -790,6 +860,104 @@ function DashboardJobs() {
       }
       return updated;
     });
+  };
+
+  const handleJobLinkDraftChange = (field, value) => {
+    setJobLinksDraft(prev => ({ ...prev, [field]: value }));
+    setJobLinksMessage(null);
+  };
+
+  const handleResetJobLinks = () => {
+    if (!selectedJob) {
+      setJobLinksDraft({ apply: '', portal: '' });
+      setJobLinksMessage(null);
+      return;
+    }
+
+    setJobLinksDraft({
+      apply: selectedJob.applyUrl || '',
+      portal: selectedJob.portalUrl || '',
+    });
+    setJobLinksMessage(null);
+  };
+
+  const handleSaveJobLinks = async event => {
+    event?.preventDefault?.();
+
+    if (!selectedJob?.recordId) {
+      setJobLinksMessage({ type: 'error', text: 'Select a saved job before updating links.' });
+      return;
+    }
+
+    if (!user?.id) {
+      setJobLinksMessage({ type: 'error', text: 'Sign in to save job links.' });
+      return;
+    }
+
+    if (!jobLinksDirty) {
+      setJobLinksMessage({ type: 'info', text: 'Update a link before saving.' });
+      return;
+    }
+
+    let normalizedApply;
+    let normalizedPortal;
+
+    try {
+      normalizedApply = normalizeOptionalUrl(jobLinksDraft.apply, 'Apply URL');
+      normalizedPortal = normalizeOptionalUrl(jobLinksDraft.portal, 'Portal URL');
+    } catch (urlError) {
+      setJobLinksMessage({ type: 'error', text: urlError.message });
+      return;
+    }
+
+    setIsSavingLinks(true);
+    setJobLinksMessage(null);
+
+    try {
+      const { data, error: updateError } = await supabase
+        .from('user_jobs')
+        .update({
+          job_apply_url: normalizedApply,
+          job_portal_url: normalizedPortal,
+        })
+        .eq('id', selectedJob.recordId)
+        .eq('user_id', user.id)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      const mapped = mapJobRecord(data);
+      if (!mapped) {
+        throw new Error('Job update returned no data.');
+      }
+
+      const updatedJob = {
+        ...mapped,
+        optimizedResume: selectedJob.optimizedResume,
+        resumeUpdatedAt: selectedJob.resumeUpdatedAt,
+      };
+
+      setJobs(prev =>
+        sortJobsByCreated(prev.map(job => (job.id === selectedJob.id ? updatedJob : job))),
+      );
+
+      setJobLinksDraft({
+        apply: updatedJob.applyUrl || '',
+        portal: updatedJob.portalUrl || '',
+      });
+      setJobLinksMessage({ type: 'success', text: 'Job links updated.' });
+    } catch (linkError) {
+      console.error('[TuneIt] Unable to update job links.', linkError);
+      setJobLinksMessage({
+        type: 'error',
+        text: linkError?.message || 'Unable to save job links. Please try again.',
+      });
+    } finally {
+      setIsSavingLinks(false);
+    }
   };
 
   const startBaseResumeEditing = () => {
@@ -1502,6 +1670,49 @@ function DashboardJobs() {
             required
           />
 
+          <div className="job-entry-links">
+            <div className="job-entry-field">
+              <label htmlFor="job-apply-url" className="job-entry-label">
+                Application URL (optional)
+              </label>
+              <input
+                id="job-apply-url"
+                name="job-apply-url"
+                className="job-entry-input"
+                type="url"
+                inputMode="url"
+                autoComplete="url"
+                placeholder="https://careers.company.com/apply"
+                value={jobApplyUrl}
+                onChange={event => setJobApplyUrl(event.target.value)}
+                disabled={isSaving}
+              />
+              <span className="job-entry-helper">
+                Save the exact link where you submit the application.
+              </span>
+            </div>
+            <div className="job-entry-field">
+              <label htmlFor="job-portal-url" className="job-entry-label">
+                Job Portal URL (optional)
+              </label>
+              <input
+                id="job-portal-url"
+                name="job-portal-url"
+                className="job-entry-input"
+                type="url"
+                inputMode="url"
+                autoComplete="url"
+                placeholder="https://boards.greenhouse.io/company"
+                value={jobPortalUrl}
+                onChange={event => setJobPortalUrl(event.target.value)}
+                disabled={isSaving}
+              />
+              <span className="job-entry-helper">
+                Track the general posting or portal location.
+              </span>
+            </div>
+          </div>
+
           {error ? <p className="job-entry-error" role="alert">{error}</p> : null}
 
           <div className="job-entry-actions">
@@ -1820,6 +2031,14 @@ function DashboardJobs() {
                       <span className="job-list-title">{getJobTitle(job)}</span>
                       <span className="job-list-snippet">{getJobSnippet(job)}</span>
                       <span className="job-list-salary">Salary: {getJobSalaryLabel(job)}</span>
+                      {job.applyUrl || job.portalUrl ? (
+                        <span className="job-link-tags" aria-label="Saved job links">
+                          {job.applyUrl ? <span className="job-link-tag">Apply link</span> : null}
+                          {job.portalUrl ? (
+                            <span className="job-link-tag job-link-tag--muted">Portal link</span>
+                          ) : null}
+                        </span>
+                      ) : null}
                       {dateFormatter ? (
                         <span className="job-list-timestamp">
                           Saved {dateFormatter.format(new Date(job.createdAt))}
@@ -1938,6 +2157,103 @@ function DashboardJobs() {
               ) : null}
             </div>
           </div>
+
+          {selectedJob && hasSavedJobLinks ? (
+            <div className="job-link-quick-actions" aria-label="Saved job links">
+              {selectedJob.applyUrl ? (
+                <a
+                  className="job-link-pill"
+                  href={selectedJob.applyUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  Open Apply Link
+                </a>
+              ) : null}
+              {selectedJob.portalUrl ? (
+                <a
+                  className="job-link-pill job-link-pill--ghost"
+                  href={selectedJob.portalUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  Open Portal Link
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+
+          {selectedJob ? (
+            <section className="job-links-panel" aria-labelledby="job-links-panel-title">
+              <div className="job-links-panel-header">
+                <div>
+                  <h3 id="job-links-panel-title">Job Links</h3>
+                  <p className="job-links-panel-description">
+                    Keep track of where to apply and the portal that hosts this posting.
+                  </p>
+                </div>
+                {jobLinksMessage ? (
+                  <p
+                    className={`resume-status resume-status--${jobLinksMessage.type}`}
+                    role={jobLinksMessage.type === 'error' ? 'alert' : 'status'}
+                  >
+                    {jobLinksMessage.text}
+                  </p>
+                ) : null}
+              </div>
+              <form className="job-links-form" onSubmit={handleSaveJobLinks}>
+                <div className="job-links-fields">
+                  <div className="job-link-field">
+                    <label htmlFor="selected-job-apply-url">Application URL</label>
+                    <input
+                      id="selected-job-apply-url"
+                      name="selected-job-apply-url"
+                      className="job-link-input"
+                      type="url"
+                      inputMode="url"
+                      autoComplete="url"
+                      placeholder="https://careers.company.com/apply"
+                      value={jobLinksDraft.apply}
+                      onChange={event => handleJobLinkDraftChange('apply', event.target.value)}
+                      disabled={isSavingLinks}
+                    />
+                  </div>
+                  <div className="job-link-field">
+                    <label htmlFor="selected-job-portal-url">Job portal URL</label>
+                    <input
+                      id="selected-job-portal-url"
+                      name="selected-job-portal-url"
+                      className="job-link-input"
+                      type="url"
+                      inputMode="url"
+                      autoComplete="url"
+                      placeholder="https://boards.greenhouse.io/company"
+                      value={jobLinksDraft.portal}
+                      onChange={event => handleJobLinkDraftChange('portal', event.target.value)}
+                      disabled={isSavingLinks}
+                    />
+                  </div>
+                </div>
+                <div className="job-link-actions">
+                  <button
+                    type="button"
+                    className="job-link-reset"
+                    onClick={handleResetJobLinks}
+                    disabled={!jobLinksDirty || isSavingLinks}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="submit"
+                    className="job-link-save"
+                    disabled={!jobLinksDirty || isSavingLinks}
+                  >
+                    {isSavingLinks ? 'Saving…' : 'Save Links'}
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
 
           {!selectedJob ? (
             <p className="job-preview-empty">
