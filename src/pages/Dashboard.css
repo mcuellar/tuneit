@@ -469,6 +469,14 @@
   background: #1f6f3d;
 }
 
+.resume-status--info {
+  color: #4b4f65;
+}
+
+.resume-status--info::before {
+  background: #4b4f65;
+}
+
 .dashboard--dark .resume-status--error {
   color: #ff9b9b;
 }
@@ -483,6 +491,14 @@
 
 .dashboard--dark .resume-status--success::before {
   background: #7bd88f;
+}
+
+.dashboard--dark .resume-status--info {
+  color: #f2d492;
+}
+
+.dashboard--dark .resume-status--info::before {
+  background: #f2d492;
 }
 
 .optimize-error {
@@ -682,6 +698,45 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.job-entry-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.job-entry-field {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.job-entry-input {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(31, 35, 51, 0.18);
+  padding: 0.65rem 0.85rem;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.92);
+  color: inherit;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.job-entry-input:focus {
+  outline: none;
+  border-color: rgba(212, 175, 112, 0.6);
+  box-shadow: 0 0 0 3px rgba(212, 175, 112, 0.18);
+}
+
+.dashboard--dark .job-entry-input {
+  background: rgba(19, 23, 34, 0.85);
+  border-color: rgba(212, 175, 112, 0.28);
+}
+
+.job-entry-helper {
+  font-size: 0.8rem;
+  opacity: 0.65;
 }
 
 .job-entry-label {
@@ -1022,6 +1077,39 @@
   color: #8ed0b9;
 }
 
+.job-link-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.job-link-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: rgba(45, 106, 91, 0.12);
+  color: #2d6a5b;
+}
+
+.job-link-tag--muted {
+  background: rgba(31, 35, 51, 0.08);
+  color: rgba(31, 35, 51, 0.7);
+}
+
+.dashboard--dark .job-link-tag {
+  background: rgba(142, 208, 185, 0.18);
+  color: #8ed0b9;
+}
+
+.dashboard--dark .job-link-tag--muted {
+  background: rgba(246, 242, 235, 0.12);
+  color: rgba(246, 242, 235, 0.75);
+}
+
 .job-list-timestamp {
   font-size: 0.75rem;
   opacity: 0.6;
@@ -1153,6 +1241,173 @@
   margin: 0;
   color: #c23b3b;
   font-weight: 600;
+}
+
+.job-link-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.job-link-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 175, 112, 0.4);
+  font-weight: 600;
+  color: #1f2333;
+  background: rgba(212, 175, 112, 0.16);
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.job-link-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(31, 35, 51, 0.18);
+}
+
+.job-link-pill--ghost {
+  background: rgba(31, 35, 51, 0.05);
+  border-color: rgba(31, 35, 51, 0.12);
+}
+
+.dashboard--dark .job-link-pill {
+  color: #fdfbf7;
+  border-color: rgba(212, 175, 112, 0.55);
+  background: rgba(212, 175, 112, 0.18);
+}
+
+.dashboard--dark .job-link-pill--ghost {
+  background: rgba(246, 242, 235, 0.08);
+  border-color: rgba(246, 242, 235, 0.24);
+}
+
+.job-links-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(31, 35, 51, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  margin-bottom: 1.25rem;
+}
+
+.dashboard--dark .job-links-panel {
+  background: rgba(19, 23, 34, 0.85);
+  border-color: rgba(212, 175, 112, 0.28);
+}
+
+.job-links-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.job-links-panel-header h3 {
+  margin: 0;
+}
+
+.job-links-panel-description {
+  margin: 0.35rem 0 0;
+  opacity: 0.7;
+  max-width: 36rem;
+}
+
+.job-links-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.job-links-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.job-link-field {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.job-link-input {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(31, 35, 51, 0.18);
+  padding: 0.65rem 0.85rem;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.92);
+  color: inherit;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.job-link-input:focus {
+  outline: none;
+  border-color: rgba(212, 175, 112, 0.6);
+  box-shadow: 0 0 0 3px rgba(212, 175, 112, 0.18);
+}
+
+.dashboard--dark .job-link-input {
+  background: rgba(19, 23, 34, 0.85);
+  border-color: rgba(212, 175, 112, 0.28);
+}
+
+.job-link-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.job-link-save,
+.job-link-reset {
+  border-radius: 999px;
+  padding: 0.55rem 1.2rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.job-link-save {
+  background: linear-gradient(135deg, #d4af70 0%, #f2d492 100%);
+  color: #1f2333;
+  box-shadow: 0 4px 12px rgba(212, 175, 112, 0.35);
+}
+
+.job-link-reset {
+  background: rgba(212, 175, 112, 0.16);
+  color: inherit;
+}
+
+.job-link-save:hover:not(:disabled),
+.job-link-reset:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.job-link-save:disabled,
+.job-link-reset:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.dashboard--dark .job-link-save {
+  color: #1f2333;
+}
+
+.dashboard--dark .job-link-reset {
+  background: rgba(246, 242, 235, 0.12);
+  border: 1px solid rgba(246, 242, 235, 0.18);
 }
 
 .job-list-panel {
